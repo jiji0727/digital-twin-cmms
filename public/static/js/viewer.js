@@ -23,7 +23,8 @@ const state = {
     equipmentToPlace: null,
     draggedMarker: null,
     isDragging: false,
-    modelLoaded: false
+    modelLoaded: false,
+    sceneLogged: false
 };
 
 // Initialize the 3D viewer with LCC SDK
@@ -206,6 +207,17 @@ function animate() {
 
     // Update equipment markers
     const time = Date.now() * 0.001;
+    
+    // Debug: Log scene objects once
+    if (!state.sceneLogged && state.modelLoaded) {
+        console.log('🔍 Scene objects for occlusion test:', state.scene.children.map(c => ({
+            type: c.type,
+            name: c.name,
+            childrenCount: c.children?.length || 0
+        })));
+        state.sceneLogged = true;
+    }
+    
     state.markers.forEach(marker => {
         // Animate scale with pulse effect
         marker.scale.setScalar(1 + Math.sin(time * 2 + marker.position.x) * 0.1);
