@@ -2090,6 +2090,215 @@ window.showNotification = showNotification;
 window.showDialog = showDialog;
 
 // ============================================
+// Work Order Management Functions
+// ============================================
+
+// View work order details
+window.viewWorkOrder = async function(id) {
+    try {
+        const response = await axios.get('/api/workorders/' + id);
+        const wo = response.data;
+        
+        const statusOptions = ['pending', 'in-progress', 'completed', 'cancelled'];
+        const priorityColors = {
+            'critical': 'red',
+            'high': 'orange',
+            'medium': 'yellow',
+            'low': 'green'
+        };
+        
+        const dialog = 
+            '<div class="glass rounded-lg p-6 max-w-lg mx-auto">' +
+            '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+            '<i class="fas fa-clipboard-list mr-2 text-purple-400"></i>' +
+            escapeHtml(wo.title || '作業指示') +
+            '</h3>' +
+            '<div class="space-y-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">説明</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(wo.description || '') + '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">ステータス</label>' +
+            '<select id="wo-status" class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+            statusOptions.map(s => '<option value="' + s + '" ' + (s === wo.status ? 'selected' : '') + '>' + s + '</option>').join('') +
+            '</select>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">優先度</label>' +
+            '<div class="text-' + (priorityColors[wo.priority] || 'gray') + '-400 text-sm mt-1 font-semibold">' + 
+            escapeHtml(wo.priority || 'medium') + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">担当者</label>' +
+            '<input type="text" id="wo-assigned" value="' + escapeHtml(wo.assigned_to || '') + '" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">予定日</label>' +
+            '<input type="date" id="wo-date" value="' + (wo.scheduled_date || '') + '" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+            '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">設備ID</label>' +
+            '<div class="text-white text-sm mt-1">' + (wo.equipment_id || '-') + '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">作成日</label>' +
+            '<div class="text-white text-sm mt-1">' + formatDate(wo.created_at) + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="flex gap-2 mt-6">' +
+            '<button onclick="updateWorkOrder(' + id + ')" ' +
+            'class="flex-1 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition">' +
+            '<i class="fas fa-save mr-2"></i>更新' +
+            '</button>' +
+            '<button onclick="closeDialog()" ' +
+            'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+            '閉じる' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error loading work order:', error);
+        showToast('作業指示の読み込みに失敗しました', 'error');
+    }
+};
+
+// Update work order
+window.updateWorkOrder = async function(id) {
+    try {
+        const status = document.getElementById('wo-status').value;
+        const assigned_to = document.getElementById('wo-assigned').value;
+        const scheduled_date = document.getElementById('wo-date').value;
+        
+        await axios.put('/api/workorders/' + id, {
+            status: status,
+            assigned_to: assigned_to,
+            scheduled_date: scheduled_date
+        });
+        
+        showToast('作業指示を更新しました', 'success');
+        closeDialog();
+        
+        // Reload work orders list
+        if (window.loadCMMSData) {
+            window.loadCMMSData();
+        }
+    } catch (error) {
+        console.error('Error updating work order:', error);
+        showToast('作業指示の更新に失敗しました', 'error');
+    }
+};
+
+// Create new work order
+window.createWorkOrder = function() {
+    const dialog = 
+        '<div class="glass rounded-lg p-6 max-w-lg mx-auto">' +
+        '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+        '<i class="fas fa-plus-circle mr-2 text-purple-400"></i>' +
+        '新規作業指示' +
+        '</h3>' +
+        '<div class="space-y-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">タイトル</label>' +
+        '<input type="text" id="new-wo-title" placeholder="作業タイトル" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">説明</label>' +
+        '<textarea id="new-wo-description" rows="3" placeholder="作業内容の詳細" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm"></textarea>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">優先度</label>' +
+        '<select id="new-wo-priority" class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '<option value="low">Low</option>' +
+        '<option value="medium" selected>Medium</option>' +
+        '<option value="high">High</option>' +
+        '<option value="critical">Critical</option>' +
+        '</select>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">設備ID</label>' +
+        '<input type="number" id="new-wo-equipment" placeholder="設備ID" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">担当者</label>' +
+        '<input type="text" id="new-wo-assigned" placeholder="担当者名" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">予定日</label>' +
+        '<input type="date" id="new-wo-date" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="flex gap-2 mt-6">' +
+        '<button onclick="submitNewWorkOrder()" ' +
+        'class="flex-1 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg transition">' +
+        '<i class="fas fa-plus mr-2"></i>作成' +
+        '</button>' +
+        '<button onclick="closeDialog()" ' +
+        'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+        'キャンセル' +
+        '</button>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+};
+
+// Submit new work order
+window.submitNewWorkOrder = async function() {
+    try {
+        const title = document.getElementById('new-wo-title').value;
+        const description = document.getElementById('new-wo-description').value;
+        const priority = document.getElementById('new-wo-priority').value;
+        const equipment_id = parseInt(document.getElementById('new-wo-equipment').value);
+        const assigned_to = document.getElementById('new-wo-assigned').value;
+        const scheduled_date = document.getElementById('new-wo-date').value;
+        
+        if (!title) {
+            showToast('タイトルを入力してください', 'error');
+            return;
+        }
+        
+        await axios.post('/api/workorders', {
+            title: title,
+            description: description,
+            priority: priority,
+            equipment_id: equipment_id || null,
+            assigned_to: assigned_to || null,
+            scheduled_date: scheduled_date || null,
+            status: 'pending'
+        });
+        
+        showToast('作業指示を作成しました', 'success');
+        closeDialog();
+        
+        // Reload work orders list
+        if (window.loadCMMSData) {
+            window.loadCMMSData();
+        }
+    } catch (error) {
+        console.error('Error creating work order:', error);
+        showToast('作業指示の作成に失敗しました', 'error');
+    }
+};
+
+// ============================================
 // Notification Center Functions
 // ============================================
 

@@ -447,11 +447,11 @@ app.post('/api/workorders', async (c) => {
       INSERT INTO work_orders (equipment_id, maintenance_plan_id, title, description, type, priority, status, assigned_to, scheduled_date, estimated_hours)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      data.equipment_id,
+      data.equipment_id || null,
       data.maintenance_plan_id || null,
       data.title,
       data.description || null,
-      data.type,
+      data.type || 'corrective',
       data.priority || 'medium',
       data.status || 'pending',
       data.assigned_to || null,
@@ -473,19 +473,27 @@ app.put('/api/workorders/:id', async (c) => {
     
     await c.env.DB.prepare(`
       UPDATE work_orders 
-      SET title = ?, description = ?, type = ?, priority = ?, status = ?,
-          assigned_to = ?, scheduled_date = ?, estimated_hours = ?, actual_hours = ?,
-          notes = ?, updated_at = datetime('now')
+      SET title = COALESCE(?, title),
+          description = COALESCE(?, description),
+          type = COALESCE(?, type),
+          priority = COALESCE(?, priority),
+          status = COALESCE(?, status),
+          assigned_to = ?,
+          scheduled_date = ?,
+          estimated_hours = ?,
+          actual_hours = ?,
+          notes = ?,
+          updated_at = datetime('now')
       WHERE id = ?
     `).bind(
-      data.title,
-      data.description,
-      data.type,
-      data.priority,
-      data.status,
-      data.assigned_to,
-      data.scheduled_date,
-      data.estimated_hours,
+      data.title || null,
+      data.description || null,
+      data.type || null,
+      data.priority || null,
+      data.status || null,
+      data.assigned_to || null,
+      data.scheduled_date || null,
+      data.estimated_hours || null,
       data.actual_hours || null,
       data.notes || null,
       id

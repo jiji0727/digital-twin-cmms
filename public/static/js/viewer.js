@@ -746,10 +746,16 @@ function renderMaintenanceList(maintenance) {
 function renderWorkOrdersList(workOrders) {
     const list = document.getElementById('workorder-list');
     if (!workOrders || workOrders.length === 0) {
-        list.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">作業指示がありません</div>';
+        list.innerHTML = 
+            '<div class="text-gray-400 text-sm text-center py-4">作業指示がありません</div>' +
+            '<button onclick="if(window.createWorkOrder) window.createWorkOrder()" ' +
+            'class="w-full px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg text-sm transition mt-2">' +
+            '<i class="fas fa-plus mr-2"></i>作業指示を追加' +
+            '</button>';
         return;
     }
-    list.innerHTML = workOrders.slice(0, 10).map(wo => {
+    
+    const woList = workOrders.slice(0, 10).map(wo => {
         const priorityColors = {
             'critical': 'red',
             'high': 'red',
@@ -765,7 +771,8 @@ function renderWorkOrdersList(workOrders) {
         const statusColor = statusColors[wo.status] || 'gray';
         
         return `
-            <div class="glass rounded p-3">
+            <div class="glass rounded p-3 cursor-pointer hover:bg-white hover:bg-opacity-10 transition" 
+                 onclick="if(window.viewWorkOrder) window.viewWorkOrder(${wo.id})">
                 <div class="flex items-center justify-between mb-2">
                     <span class="text-white text-sm font-medium">${wo.title}</span>
                     <span class="px-2 py-1 rounded text-xs bg-${priorityColor}-500 bg-opacity-20 text-${priorityColor}-400">
@@ -778,6 +785,14 @@ function renderWorkOrdersList(workOrders) {
             </div>
         `;
     }).join('');
+    
+    const addButton = 
+        '<button onclick="if(window.createWorkOrder) window.createWorkOrder()" ' +
+        'class="w-full px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg text-sm transition mt-2">' +
+        '<i class="fas fa-plus mr-2"></i>作業指示を追加' +
+        '</button>';
+    
+    list.innerHTML = woList + addButton;
 }
 
 function updateAnalyticsDashboard(analytics) {
