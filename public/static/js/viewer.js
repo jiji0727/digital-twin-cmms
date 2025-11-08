@@ -73,13 +73,17 @@ async function initViewer() {
     
     // Configure mouse buttons:
     // RIGHT click (2) for rotate
-    // MIDDLE click (1) for zoom
+    // MIDDLE click (1) for pan (horizontal movement)
+    // Scroll wheel for zoom
     // Left click (0) reserved for marker interaction
     state.controls.mouseButtons = {
         LEFT: null,  // Disable left click for orbit controls
-        MIDDLE: THREE.MOUSE.DOLLY,  // Middle click for zoom
+        MIDDLE: THREE.MOUSE.PAN,  // Middle click for pan (horizontal movement)
         RIGHT: THREE.MOUSE.ROTATE   // Right click for rotate
     };
+    
+    // Enable pan with middle mouse button
+    state.controls.enablePan = true;
     
     updateLoadingProgress(25);
 

@@ -640,7 +640,7 @@ app.get('/', (c) => {
                     </button>
                     <div class="text-gray-400 text-xs ml-4 flex items-center">
                         <i class="fas fa-info-circle mr-2"></i>
-                        <span>右クリック: 回転 | ホイール: ズーム | 左クリック: 選択・配置</span>
+                        <span>右クリック: 回転 | 中クリック: 水平移動 | ホイール: ズーム | 左クリック: 選択・配置</span>
                     </div>
                 </div>
 
