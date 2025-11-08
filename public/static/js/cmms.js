@@ -2089,6 +2089,237 @@ window.showDocumentsForEquipment = function(equipmentId) {
 window.showNotification = showNotification;
 window.showDialog = showDialog;
 
+// ============================================
+// Notification Center Functions
+// ============================================
+
+let notificationFilter = 'all';
+let allNotifications = [];
+
+// Load notifications
+window.loadNotifications = async function() {
+    try {
+        const response = await axios.get('/api/notifications');
+        allNotifications = response.data;
+        
+        // Update badge
+        const unreadCount = allNotifications.filter(n => n.status === 'unread').length;
+        const badge = document.getElementById('notification-badge');
+        if (unreadCount > 0) {
+            badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+        
+        // Render notifications
+        renderNotifications();
+    } catch (error) {
+        console.error('Error loading notifications:', error);
+        showToast('通知の読み込みに失敗しました', 'error');
+    }
+};
+
+// Render notifications based on current filter
+function renderNotifications() {
+    const container = document.getElementById('notification-list');
+    if (!container) return;
+    
+    // Filter notifications
+    let filtered = allNotifications;
+    if (notificationFilter === 'unread') {
+        filtered = allNotifications.filter(n => n.status === 'unread');
+    } else if (notificationFilter === 'important') {
+        filtered = allNotifications.filter(n => n.priority === 'high' || n.priority === 'urgent');
+    }
+    
+    // Sort by sent_at descending
+    filtered.sort((a, b) => new Date(b.sent_at) - new Date(a.sent_at));
+    
+    if (filtered.length === 0) {
+        container.innerHTML = 
+            '<div class="text-center text-gray-500 text-sm py-8">' +
+            '<i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>' +
+            '<p>通知はありません</p>' +
+            '</div>';
+        return;
+    }
+    
+    // Render notification items
+    container.innerHTML = filtered.map(n => {
+        const isUnread = n.status === 'unread';
+        const priorityColor = n.priority === 'high' || n.priority === 'urgent' ? 'text-red-400' : 
+                             n.priority === 'normal' ? 'text-yellow-400' : 'text-gray-400';
+        const icon = n.notification_type === 'alert' ? 'fa-exclamation-triangle' :
+                    n.notification_type === 'info' ? 'fa-info-circle' :
+                    n.notification_type === 'success' ? 'fa-check-circle' :
+                    n.notification_type === 'warning' ? 'fa-exclamation-circle' : 'fa-bell';
+        
+        return (
+            '<div class="card cursor-pointer ' + (isUnread ? 'bg-blue-500/10 border-blue-500/30' : '') + '" ' +
+            'onclick="viewNotification(' + n.id + ')">' +
+            '<div class="flex items-start gap-3">' +
+            '<i class="fas ' + icon + ' ' + priorityColor + ' text-lg mt-1"></i>' +
+            '<div class="flex-1 min-w-0">' +
+            '<div class="flex items-start justify-between gap-2 mb-1">' +
+            '<div class="text-white text-sm font-semibold truncate">' + escapeHtml(n.title || 'Notification') + '</div>' +
+            (isUnread ? '<span class="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full"></span>' : '') +
+            '</div>' +
+            '<div class="text-gray-400 text-xs mb-2 line-clamp-2">' + escapeHtml(n.message || '') + '</div>' +
+            '<div class="flex items-center justify-between">' +
+            '<span class="text-gray-500 text-xs">' +
+            '<i class="far fa-clock mr-1"></i>' + formatDate(n.sent_at) +
+            '</span>' +
+            (isUnread ? 
+                '<button onclick="event.stopPropagation(); markNotificationRead(' + n.id + ')" ' +
+                'class="text-blue-400 hover:text-blue-300 text-xs">' +
+                '<i class="fas fa-check mr-1"></i>既読</button>' : '') +
+            '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>'
+        );
+    }).join('');
+}
+
+// View notification details
+window.viewNotification = async function(id) {
+    const notification = allNotifications.find(n => n.id === id);
+    if (!notification) return;
+    
+    // Mark as read
+    if (notification.status === 'unread') {
+        await markNotificationRead(id);
+    }
+    
+    // Show details dialog
+    const dialog = 
+        '<div class="glass rounded-lg p-6 max-w-md mx-auto">' +
+        '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+        '<i class="fas fa-bell mr-2 text-blue-400"></i>' +
+        escapeHtml(notification.title || 'Notification') +
+        '</h3>' +
+        '<div class="space-y-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">メッセージ</label>' +
+        '<div class="text-white text-sm mt-1">' + escapeHtml(notification.message || '') + '</div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">タイプ</label>' +
+        '<div class="text-white text-sm mt-1">' + escapeHtml(notification.notification_type || 'info') + '</div>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">優先度</label>' +
+        '<div class="text-white text-sm mt-1">' + escapeHtml(notification.priority || 'normal') + '</div>' +
+        '</div>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">送信日時</label>' +
+        '<div class="text-white text-sm mt-1">' + formatDate(notification.sent_at) + '</div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="flex gap-2 mt-6">' +
+        '<button onclick="deleteNotification(' + id + ')" class="flex-1 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition">' +
+        '<i class="fas fa-trash mr-2"></i>削除' +
+        '</button>' +
+        '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+        '閉じる' +
+        '</button>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+};
+
+// Mark notification as read
+window.markNotificationRead = async function(id) {
+    try {
+        await axios.put('/api/notifications/' + id + '/read');
+        
+        // Update local data
+        const notification = allNotifications.find(n => n.id === id);
+        if (notification) {
+            notification.status = 'read';
+            notification.read_at = new Date().toISOString();
+        }
+        
+        // Reload notifications to update UI
+        await loadNotifications();
+        
+        showToast('通知を既読にしました', 'success');
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        showToast('既読処理に失敗しました', 'error');
+    }
+};
+
+// Mark all notifications as read
+window.markAllNotificationsRead = async function() {
+    try {
+        await axios.put('/api/notifications/read-all');
+        
+        // Update local data
+        allNotifications.forEach(n => {
+            n.status = 'read';
+            n.read_at = new Date().toISOString();
+        });
+        
+        // Reload notifications to update UI
+        await loadNotifications();
+        
+        showToast('すべての通知を既読にしました', 'success');
+    } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+        showToast('一括既読処理に失敗しました', 'error');
+    }
+};
+
+// Delete notification
+window.deleteNotification = async function(id) {
+    if (!confirm('この通知を削除しますか？')) return;
+    
+    try {
+        await axios.delete('/api/notifications/' + id);
+        
+        // Remove from local data
+        allNotifications = allNotifications.filter(n => n.id !== id);
+        
+        // Reload notifications to update UI
+        await loadNotifications();
+        
+        closeDialog();
+        showToast('通知を削除しました', 'success');
+    } catch (error) {
+        console.error('Error deleting notification:', error);
+        showToast('通知の削除に失敗しました', 'error');
+    }
+};
+
+// Filter notifications
+window.filterNotifications = function(filter) {
+    notificationFilter = filter;
+    
+    // Update filter button styles
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+        if (btn.getAttribute('data-filter') === filter) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+    
+    // Re-render
+    renderNotifications();
+};
+
+// Auto-refresh notifications every 30 seconds
+setInterval(function() {
+    if (document.getElementById('right-panel').classList.contains('open')) {
+        loadNotifications();
+    }
+}, 30000);
+
 console.log('✅ CMMS Feature Module loaded');
 
 // Initialize on page load - resources tab is active by default
@@ -2098,4 +2329,7 @@ window.addEventListener('DOMContentLoaded', function() {
     
     // Resources tab is already loaded by viewer.js
     // Other tabs will auto-load when user switches to them via switchTab()
+    
+    // Load notifications
+    loadNotifications();
 });

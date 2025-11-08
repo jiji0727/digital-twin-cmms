@@ -2241,6 +2241,51 @@ app.get('/', (c) => {
                 from { opacity: 0; }
                 to { opacity: 1; }
             }
+            
+            /* Notification Badge Animation */
+            #notification-badge {
+                animation: pulse 2s ease-in-out infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.1); }
+            }
+            
+            /* Smooth Transitions for All Interactive Elements */
+            button, .card, .filter-btn, .control-btn, .tab-btn {
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            
+            /* Loading Skeleton */
+            .skeleton {
+                background: linear-gradient(
+                    90deg,
+                    rgba(255, 255, 255, 0.05) 0%,
+                    rgba(255, 255, 255, 0.1) 50%,
+                    rgba(255, 255, 255, 0.05) 100%
+                );
+                background-size: 200% 100%;
+                animation: shimmer 1.5s infinite;
+            }
+            @keyframes shimmer {
+                0% { background-position: -200% 0; }
+                100% { background-position: 200% 0; }
+            }
+            
+            /* Success/Error Toast Styling */
+            .toast {
+                animation: slideInUp 0.3s ease-out;
+            }
+            @keyframes slideInUp {
+                from { 
+                    opacity: 0; 
+                    transform: translateY(20px); 
+                }
+                to { 
+                    opacity: 1; 
+                    transform: translateY(0); 
+                }
+            }
         </style>
         <script>
             // Register Service Worker for data.bin reconstruction
@@ -2553,69 +2598,37 @@ app.get('/', (c) => {
             <!-- Right Side Panel - Work Orders & Alerts -->
             <div id="right-panel" class="side-panel right glass" onmouseenter="openRightPanel()" onmouseleave="closeRightPanel()">
                 <div class="p-4 space-y-4">
-                    <div class="border-b border-gray-700 pb-3">
+                    <!-- Header -->
+                    <div class="border-b border-gray-700 pb-3 flex items-center justify-between">
                         <h3 class="text-white font-bold text-lg flex items-center">
-                            <i class="fas fa-tasks mr-2 text-purple-400"></i>
-                            作業管理
+                            <i class="fas fa-bell mr-2 text-blue-400"></i>
+                            通知センター
+                            <span id="notification-badge" class="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full" style="display: none;">0</span>
                         </h3>
+                        <button onclick="markAllNotificationsRead()" class="text-xs text-blue-400 hover:text-blue-300 transition">
+                            <i class="fas fa-check-double mr-1"></i>全既読
+                        </button>
                     </div>
 
-                    <!-- Work Orders -->
-                    <div>
-                        <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
-                            <i class="fas fa-clipboard-list mr-2 text-purple-400"></i>
-                            作業指示
-                        </h4>
-                        <div class="space-y-2 max-h-80 overflow-y-auto" id="workorder-list">
-                            <!-- Populated by JavaScript -->
-                        </div>
+                    <!-- Filter Tabs -->
+                    <div class="flex gap-2 text-xs">
+                        <button class="filter-btn active" onclick="filterNotifications('all')" data-filter="all">
+                            <i class="fas fa-inbox mr-1"></i>すべて
+                        </button>
+                        <button class="filter-btn" onclick="filterNotifications('unread')" data-filter="unread">
+                            <i class="fas fa-circle mr-1"></i>未読
+                        </button>
+                        <button class="filter-btn" onclick="filterNotifications('important')" data-filter="important">
+                            <i class="fas fa-star mr-1"></i>重要
+                        </button>
                     </div>
 
-                    <!-- Alerts -->
-                    <div>
-                        <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
-                            <i class="fas fa-bell mr-2 text-red-400"></i>
-                            アラート
-                        </h4>
-                        <div class="space-y-2 max-h-48 overflow-y-auto" id="alert-list">
-                            <!-- Populated by JavaScript -->
-                        </div>
-                    </div>
-
-                    <!-- Real-time Monitoring -->
-                    <div>
-                        <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
-                            <i class="fas fa-chart-area mr-2 text-blue-400"></i>
-                            リアルタイム監視
-                        </h4>
-                        <div class="space-y-3">
-                            <div>
-                                <div class="flex justify-between text-xs text-gray-400 mb-1">
-                                    <span>CPU使用率</span>
-                                    <span>67%</span>
-                                </div>
-                                <div class="w-full bg-gray-700 rounded-full h-2">
-                                    <div class="bg-blue-500 h-2 rounded-full" style="width: 67%"></div>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="flex justify-between text-xs text-gray-400 mb-1">
-                                    <span>メモリ使用率</span>
-                                    <span>54%</span>
-                                </div>
-                                <div class="w-full bg-gray-700 rounded-full h-2">
-                                    <div class="bg-green-500 h-2 rounded-full" style="width: 54%"></div>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="flex justify-between text-xs text-gray-400 mb-1">
-                                    <span>ネットワーク</span>
-                                    <span>23%</span>
-                                </div>
-                                <div class="w-full bg-gray-700 rounded-full h-2">
-                                    <div class="bg-purple-500 h-2 rounded-full" style="width: 23%"></div>
-                                </div>
-                            </div>
+                    <!-- Notifications List -->
+                    <div id="notification-list" class="space-y-2 max-h-[calc(100vh-250px)] overflow-y-auto">
+                        <!-- Populated by JavaScript -->
+                        <div class="text-center text-gray-500 text-sm py-8">
+                            <i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>
+                            <p>通知はありません</p>
                         </div>
                     </div>
                 </div>
@@ -2702,6 +2715,10 @@ app.get('/', (c) => {
             function openRightPanel() {
                 clearTimeout(rightPanelTimer);
                 document.getElementById('right-panel').classList.add('open');
+                // Load notifications when panel opens
+                if (window.loadNotifications) {
+                    window.loadNotifications();
+                }
             }
             
             function closeRightPanel() {
