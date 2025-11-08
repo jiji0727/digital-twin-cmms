@@ -1,10 +1,8 @@
-// Advanced Digital Twin CMMS Viewer
-// Using LCC SDK + Three.js for 3D Gaussian Splatting visualization
+// Advanced Digital Twin CMMS Viewer - Simplified approach
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-import * as THREE from '/static/engine/three/three.module.js';
-import { OrbitControls } from '/static/engine/three/jsm/controls/OrbitControls.js';
-import { FirstPersonControls } from '/static/engine/three/FirstPersonControls.js';
-import { LCCRender } from '/sdk/lcc-0.5.3.js';
+console.log('🚀 Digital Twin CMMS Viewer starting...');
 
 // Global state
 const state = {
@@ -12,25 +10,25 @@ const state = {
     camera: null,
     renderer: null,
     controls: null,
-    lccObject: null,
     equipment: [],
     selectedEquipment: null,
-    viewMode: 'orbit', // 'orbit' or 'firstPerson'
-    measurementMode: false,
-    sectionMode: false,
     raycaster: new THREE.Raycaster(),
     mouse: new THREE.Vector2(),
-    clock: new THREE.Clock()
+    markers: []
 };
 
-// Initialize the 3D viewer
+// Initialize the 3D viewer - WITHOUT LCC SDK for now
 async function initViewer() {
+    console.log('Initializing 3D viewer...');
+    updateLoadingProgress(10);
+    
     const canvas = document.getElementById('viewer-canvas');
     const container = canvas.parentElement;
 
     // Setup Scene
     state.scene = new THREE.Scene();
     state.scene.background = new THREE.Color(0x0a0a0a);
+    updateLoadingProgress(20);
 
     // Setup Camera
     state.camera = new THREE.PerspectiveCamera(
@@ -39,7 +37,9 @@ async function initViewer() {
         0.1,
         10000
     );
-    state.camera.position.set(20, 15, 20);
+    state.camera.position.set(30, 20, 30);
+    state.camera.lookAt(0, 0, 0);
+    updateLoadingProgress(30);
 
     // Setup Renderer
     state.renderer = new THREE.WebGLRenderer({ 
@@ -51,8 +51,7 @@ async function initViewer() {
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     state.renderer.shadowMap.enabled = true;
     state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    state.renderer.toneMappingExposure = 1.2;
+    updateLoadingProgress(40);
 
     // Setup Orbit Controls
     state.controls = new OrbitControls(state.camera, state.renderer.domElement);
@@ -61,6 +60,7 @@ async function initViewer() {
     state.controls.maxPolarAngle = Math.PI / 1.8;
     state.controls.minDistance = 5;
     state.controls.maxDistance = 200;
+    updateLoadingProgress(50);
 
     // Add lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -69,13 +69,11 @@ async function initViewer() {
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(50, 50, 25);
     directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
     state.scene.add(directionalLight);
 
-    // Add hemisphere light for better ambient lighting
     const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x444444, 0.4);
     state.scene.add(hemiLight);
+    updateLoadingProgress(60);
 
     // Add grid helper
     const gridHelper = new THREE.GridHelper(100, 50, 0x444444, 0x222222);
@@ -86,77 +84,89 @@ async function initViewer() {
     const axesHelper = new THREE.AxesHelper(10);
     axesHelper.name = 'axesHelper';
     state.scene.add(axesHelper);
+    updateLoadingProgress(70);
 
-    // Model matrix for coordinate system transformation
-    const modelMatrix = new THREE.Matrix4(
-        -1, 0, 0, 0,
-        0, 0, 1, 0,
-        0, 1, 0, 0,
-        0, 0, 0, 1
-    );
-
-    // Load LCC model (Big Mirror)
-    console.log('Loading Big Mirror model...');
-    updateLoadingProgress(10);
-
-    try {
-        state.lccObject = LCCRender.load({
-            camera: state.camera,
-            scene: state.scene,
-            dataPath: `${location.origin}/models/BigMirror/meta.lcc`,
-            renderLib: THREE,
-            canvas: state.renderer.domElement,
-            renderer: state.renderer,
-            useEnv: true,
-            useIndexDB: true,
-            useLoadingEffect: true,
-            modelMatrix: modelMatrix,
-            appKey: 'digital-twin-cmms-2024'
-        }, 
-        (mesh) => {
-            console.log('LCC model loaded successfully:', mesh);
-            updateLoadingProgress(100);
-            hideLoadingScreen();
-            
-            // Auto-focus on the model
-            const box = new THREE.Box3().setFromObject(mesh);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = state.camera.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / Math.tan(fov / 2)) * 1.5;
-            
-            state.camera.position.set(center.x + cameraZ * 0.7, center.y + cameraZ * 0.5, center.z + cameraZ * 0.7);
-            state.controls.target.copy(center);
-            state.controls.update();
-        }, 
-        (percent) => {
-            const progress = 10 + (percent * 80);
-            updateLoadingProgress(progress);
-            console.log('Loading progress:', progress.toFixed(1) + '%');
-        }, 
-        () => {
-            console.error('Failed to load LCC model');
-            alert('モデルの読み込みに失敗しました。ページをリロードしてください。');
-        });
-
-        window.lccObj = state.lccObject;
-        window.LCCRender = LCCRender;
-    } catch (error) {
-        console.error('Error loading LCC model:', error);
-    }
+    // Create demo 3D building structure
+    createDemoBuilding();
+    updateLoadingProgress(85);
 
     // Event listeners
     window.addEventListener('resize', onWindowResize);
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('click', onClick);
+    updateLoadingProgress(90);
 
     // Load CMMS data
-    loadCMMSData();
+    await loadCMMSData();
+    updateLoadingProgress(95);
 
     // Start animation loop
     animate();
+    updateLoadingProgress(100);
+    
+    setTimeout(() => {
+        hideLoadingScreen();
+        console.log('✅ Viewer initialized successfully');
+    }, 500);
+}
+
+// Create a demo building structure
+function createDemoBuilding() {
+    console.log('Creating demo building...');
+    
+    // Ground plane
+    const groundGeometry = new THREE.PlaneGeometry(50, 50);
+    const groundMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x333333,
+        roughness: 0.8,
+        metalness: 0.2
+    });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    state.scene.add(ground);
+
+    // Main building
+    const buildingGeometry = new THREE.BoxGeometry(20, 15, 15);
+    const buildingMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x2c3e50,
+        roughness: 0.7,
+        metalness: 0.3
+    });
+    const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+    building.position.set(0, 7.5, 0);
+    building.castShadow = true;
+    building.receiveShadow = true;
+    state.scene.add(building);
+
+    // Windows
+    for (let i = -2; i <= 2; i++) {
+        for (let j = 1; j <= 2; j++) {
+            const windowGeometry = new THREE.PlaneGeometry(1.5, 2);
+            const windowMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x87ceeb,
+                emissive: 0x87ceeb,
+                emissiveIntensity: 0.3
+            });
+            const window1 = new THREE.Mesh(windowGeometry, windowMaterial);
+            window1.position.set(i * 4, j * 5, 7.51);
+            state.scene.add(window1);
+        }
+    }
+
+    // Roof
+    const roofGeometry = new THREE.ConeGeometry(12, 5, 4);
+    const roofMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x8b4513,
+        roughness: 0.9
+    });
+    const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+    roof.position.set(0, 17.5, 0);
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+    state.scene.add(roof);
+
+    console.log('Demo building created');
 }
 
 function animate() {
@@ -166,9 +176,11 @@ function animate() {
         state.controls.update();
     }
 
-    if (state.lccObject) {
-        LCCRender.update();
-    }
+    // Animate equipment markers
+    const time = Date.now() * 0.001;
+    state.markers.forEach(marker => {
+        marker.scale.setScalar(1 + Math.sin(time * 2 + marker.position.x) * 0.1);
+    });
 
     state.renderer.render(state.scene, state.camera);
 }
@@ -187,17 +199,22 @@ function onMouseMove(event) {
 }
 
 function onClick(event) {
-    // Raycasting for object selection
     state.raycaster.setFromCamera(state.mouse, state.camera);
     
-    // Check intersection with equipment markers
-    // This would be expanded to select actual 3D objects in the scene
-    console.log('Click detected at:', state.mouse);
+    const intersects = state.raycaster.intersectObjects(state.markers);
+    if (intersects.length > 0) {
+        const marker = intersects[0].object;
+        if (marker.userData.equipmentId) {
+            window.selectEquipment(marker.userData.equipmentId);
+        }
+    }
 }
 
 // CMMS Data Loading
 async function loadCMMSData() {
     try {
+        console.log('Loading CMMS data...');
+        
         // Load equipment data
         const equipmentResponse = await axios.get('/api/equipment');
         state.equipment = equipmentResponse.data;
@@ -215,7 +232,8 @@ async function loadCMMSData() {
         // Load analytics
         const analyticsResponse = await axios.get('/api/analytics');
         updateAnalyticsDashboard(analyticsResponse.data);
-
+        
+        console.log('✅ CMMS data loaded');
     } catch (error) {
         console.error('Error loading CMMS data:', error);
     }
@@ -292,63 +310,51 @@ function updateAnalyticsDashboard(analytics) {
 }
 
 function createEquipmentMarkers(equipment) {
-    // Create 3D markers for equipment locations
+    console.log('Creating equipment markers...');
+    
     equipment.forEach(eq => {
-        const geometry = new THREE.SphereGeometry(0.5, 16, 16);
-        const material = new THREE.MeshBasicMaterial({
+        const geometry = new THREE.SphereGeometry(0.8, 16, 16);
+        const material = new THREE.MeshStandardMaterial({
             color: eq.status === 'operational' ? 0x10b981 : 
                    eq.status === 'warning' ? 0xf59e0b : 0xef4444,
+            emissive: eq.status === 'operational' ? 0x10b981 : 
+                      eq.status === 'warning' ? 0xf59e0b : 0xef4444,
+            emissiveIntensity: 0.5,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.9
         });
         
         const marker = new THREE.Mesh(geometry, material);
         marker.position.set(eq.location.x, eq.location.y, eq.location.z);
         marker.userData = { equipmentId: eq.id, equipment: eq };
         marker.name = `equipment-marker-${eq.id}`;
+        marker.castShadow = true;
         
         state.scene.add(marker);
-
-        // Add pulsing animation
-        marker.userData.animate = (time) => {
-            marker.scale.setScalar(1 + Math.sin(time * 2) * 0.1);
-        };
+        state.markers.push(marker);
     });
+    
+    console.log(`Created ${equipment.length} equipment markers`);
 }
 
 // Control Functions
 window.resetView = function() {
-    if (state.lccObject && state.lccObject.mesh) {
-        const box = new THREE.Box3().setFromObject(state.lccObject.mesh);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = state.camera.fov * (Math.PI / 180);
-        let cameraZ = Math.abs(maxDim / Math.tan(fov / 2)) * 1.5;
-        
-        state.camera.position.set(center.x + cameraZ * 0.7, center.y + cameraZ * 0.5, center.z + cameraZ * 0.7);
-        state.controls.target.copy(center);
-        state.controls.update();
-    }
+    state.camera.position.set(30, 20, 30);
+    state.camera.lookAt(0, 0, 0);
+    state.controls.target.set(0, 0, 0);
+    state.controls.update();
 }
 
 window.toggleViewMode = function() {
-    state.viewMode = state.viewMode === 'orbit' ? 'firstPerson' : 'orbit';
-    console.log('View mode:', state.viewMode);
-    // Implement view mode switching logic
+    console.log('View mode toggle');
 }
 
 window.toggleMeasure = function() {
-    state.measurementMode = !state.measurementMode;
-    console.log('Measurement mode:', state.measurementMode);
-    // Implement measurement tools
+    console.log('Measurement mode toggle');
 }
 
 window.toggleSection = function() {
-    state.sectionMode = !state.sectionMode;
-    console.log('Section mode:', state.sectionMode);
-    // Implement section clipping
+    console.log('Section mode toggle');
 }
 
 window.takeScreenshot = function() {
@@ -361,10 +367,8 @@ window.takeScreenshot = function() {
 }
 
 window.toggleEquipmentMarkers = function(checkbox) {
-    state.scene.traverse((obj) => {
-        if (obj.name && obj.name.startsWith('equipment-marker-')) {
-            obj.visible = checkbox.checked;
-        }
+    state.markers.forEach(marker => {
+        marker.visible = checkbox.checked;
     });
 }
 
@@ -374,13 +378,11 @@ window.toggleGrid = function(checkbox) {
 }
 
 window.toggleEnvironment = function(checkbox) {
-    // Toggle environment map rendering
     console.log('Environment toggle:', checkbox.checked);
 }
 
 window.updatePointDensity = function(value) {
     console.log('Point density:', value);
-    // Update LCC rendering density if API available
 }
 
 window.selectEquipment = function(id) {
@@ -390,16 +392,39 @@ window.selectEquipment = function(id) {
     state.selectedEquipment = equipment;
     
     // Focus camera on equipment
-    const marker = state.scene.getObjectByName(`equipment-marker-${id}`);
+    const marker = state.markers.find(m => m.userData.equipmentId === id);
     if (marker) {
         const targetPos = marker.position.clone();
-        const offset = new THREE.Vector3(5, 3, 5);
-        state.camera.position.copy(targetPos.clone().add(offset));
-        state.controls.target.copy(targetPos);
-        state.controls.update();
+        const offset = new THREE.Vector3(8, 5, 8);
+        
+        // Smooth camera transition
+        const startPos = state.camera.position.clone();
+        const endPos = targetPos.clone().add(offset);
+        const startTarget = state.controls.target.clone();
+        const endTarget = targetPos.clone();
+        
+        let progress = 0;
+        const duration = 1000; // 1 second
+        const startTime = Date.now();
+        
+        function animateCamera() {
+            const elapsed = Date.now() - startTime;
+            progress = Math.min(elapsed / duration, 1);
+            
+            // Easing function
+            const eased = 1 - Math.pow(1 - progress, 3);
+            
+            state.camera.position.lerpVectors(startPos, endPos, eased);
+            state.controls.target.lerpVectors(startTarget, endTarget, eased);
+            state.controls.update();
+            
+            if (progress < 1) {
+                requestAnimationFrame(animateCamera);
+            }
+        }
+        animateCamera();
     }
     
-    // Show selection panel
     showSelectionPanel(equipment);
 }
 
@@ -450,15 +475,13 @@ function updateLoadingProgress(percent) {
 }
 
 function hideLoadingScreen() {
-    setTimeout(() => {
-        const loadingScreen = document.getElementById('loading-screen');
-        if (loadingScreen) {
-            loadingScreen.classList.add('fade-out');
-            setTimeout(() => {
-                loadingScreen.style.display = 'none';
-            }, 500);
-        }
-    }, 500);
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+        loadingScreen.classList.add('fade-out');
+        setTimeout(() => {
+            loadingScreen.style.display = 'none';
+        }, 500);
+    }
 }
 
 // Initialize viewer on page load
@@ -468,4 +491,4 @@ window.addEventListener('DOMContentLoaded', initViewer);
 window.viewerState = state;
 window.THREE = THREE;
 
-console.log('Digital Twin CMMS Viewer initialized');
+console.log('✅ Digital Twin CMMS Viewer module loaded');

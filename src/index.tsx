@@ -364,6 +364,14 @@ app.get('/', (c) => {
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script type="importmap">
+        {
+            "imports": {
+                "three": "/static/engine/three/three.module.js",
+                "three/addons/": "/static/engine/three/jsm/"
+            }
+        }
+        </script>
         <script src="/static/js/viewer.js" type="module"></script>
     </body>
     </html>
