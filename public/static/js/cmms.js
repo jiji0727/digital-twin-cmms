@@ -966,6 +966,582 @@ window.submitPart = async function() {
     }
 };
 
+// ============================================
+// Failure Detail & Edit Functions
+// ============================================
+
+// View failure detail
+window.viewFailureDetail = async function(failureId) {
+    try {
+        const response = await axios.get('/api/failures');
+        const failure = response.data.find(f => f.id === failureId);
+        
+        if (!failure) {
+            showNotification('故障報告が見つかりません', 'error');
+            return;
+        }
+        
+        const getSeverityColor = (severity) => {
+            const colors = {
+                low: 'bg-green-500',
+                medium: 'bg-yellow-500',
+                high: 'bg-orange-500',
+                critical: 'bg-red-500'
+            };
+            return colors[severity] || colors.medium;
+        };
+        
+        const getStatusBadge = (status) => {
+            const badges = {
+                reported: '<span class="px-3 py-1 rounded-full text-xs bg-yellow-500/20 text-yellow-400">報告済</span>',
+                investigating: '<span class="px-3 py-1 rounded-full text-xs bg-blue-500/20 text-blue-400">調査中</span>',
+                in_repair: '<span class="px-3 py-1 rounded-full text-xs bg-orange-500/20 text-orange-400">修理中</span>',
+                resolved: '<span class="px-3 py-1 rounded-full text-xs bg-green-500/20 text-green-400">解決済</span>',
+                closed: '<span class="px-3 py-1 rounded-full text-xs bg-gray-500/20 text-gray-400">クローズ</span>'
+            };
+            return badges[status] || badges.reported;
+        };
+        
+        const dialog = '<div class="glass rounded-lg p-6 max-w-3xl mx-auto max-h-[80vh] overflow-y-auto">' +
+            '<div class="flex items-start justify-between mb-4">' +
+            '<h3 class="text-white font-bold text-lg">' +
+            '<i class="fas fa-exclamation-triangle mr-2 text-red-400"></i>' +
+            failure.title +
+            '</h3>' +
+            '<button onclick="closeDialog()" class="text-gray-400 hover:text-white">' +
+            '<i class="fas fa-times"></i>' +
+            '</button>' +
+            '</div>' +
+            
+            '<div class="grid grid-cols-2 gap-4 mb-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">重大度</label>' +
+            '<div class="flex items-center gap-2 mt-1">' +
+            '<div class="w-3 h-3 rounded-full ' + getSeverityColor(failure.severity) + '"></div>' +
+            '<span class="text-white text-sm uppercase">' + failure.severity + '</span>' +
+            '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">ステータス</label>' +
+            '<div class="mt-1">' + getStatusBadge(failure.status) + '</div>' +
+            '</div>' +
+            '</div>' +
+            
+            '<div class="grid grid-cols-2 gap-4 mb-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">対象設備</label>' +
+            '<p class="text-white text-sm mt-1">' +
+            '<i class="fas fa-cogs mr-2 text-blue-400"></i>' +
+            (failure.equipment_name || '不明') +
+            '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">故障タイプ</label>' +
+            '<p class="text-white text-sm mt-1">' + (failure.failure_type || '-') + '</p>' +
+            '</div>' +
+            '</div>' +
+            
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">報告日時</label>' +
+            '<p class="text-white text-sm mt-1">' +
+            new Date(failure.report_date || failure.created_at).toLocaleString('ja-JP') +
+            '</p>' +
+            '</div>' +
+            
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">症状</label>' +
+            '<p class="text-white text-sm mt-1 whitespace-pre-wrap">' +
+            (failure.symptoms || '記載なし') +
+            '</p>' +
+            '</div>' +
+            
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">詳細説明</label>' +
+            '<p class="text-white text-sm mt-1 whitespace-pre-wrap">' +
+            (failure.description || '記載なし') +
+            '</p>' +
+            '</div>' +
+            
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">報告者</label>' +
+            '<p class="text-white text-sm mt-1">' + (failure.reporter_name || '不明') + '</p>' +
+            '</div>' +
+            
+            '<div class="flex gap-2 mt-6">' +
+            '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+            '閉じる' +
+            '</button>' +
+            '<button onclick="editFailure(' + failureId + ')" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition">' +
+            '<i class="fas fa-edit mr-2"></i>編集' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error viewing failure detail:', error);
+        showNotification('故障報告の取得に失敗しました', 'error');
+    }
+};
+
+// Edit failure
+window.editFailure = async function(failureId) {
+    try {
+        const response = await axios.get('/api/failures');
+        const failure = response.data.find(f => f.id === failureId);
+        
+        if (!failure) {
+            showNotification('故障報告が見つかりません', 'error');
+            return;
+        }
+        
+        // Get equipment list
+        const equipmentResponse = await axios.get('/api/equipment');
+        const equipment = equipmentResponse.data;
+        
+        const equipmentOptions = equipment.map(eq => 
+            '<option value="' + eq.id + '" ' + (eq.id === failure.equipment_id ? 'selected' : '') + '>' +
+            eq.name + ' (' + eq.type + ')' +
+            '</option>'
+        ).join('');
+        
+        const dialog = '<div class="glass rounded-lg p-6 max-w-lg mx-auto max-h-[80vh] overflow-y-auto">' +
+            '<h3 class="text-white font-bold text-lg mb-4">' +
+            '<i class="fas fa-edit mr-2 text-blue-400"></i>' +
+            '故障報告編集' +
+            '</h3>' +
+            '<div class="space-y-4">' +
+            
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">対象設備 *</label>' +
+            '<select id="edit-failure-equipment" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            equipmentOptions +
+            '</select>' +
+            '</div>' +
+            
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">タイトル *</label>' +
+            '<input type="text" id="edit-failure-title" value="' + (failure.title || '') + '" placeholder="故障の概要" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            '</div>' +
+            
+            '<div class="grid grid-cols-2 gap-4">' +
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">重大度 *</label>' +
+            '<select id="edit-failure-severity" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            '<option value="low" ' + (failure.severity === 'low' ? 'selected' : '') + '>低</option>' +
+            '<option value="medium" ' + (failure.severity === 'medium' ? 'selected' : '') + '>中</option>' +
+            '<option value="high" ' + (failure.severity === 'high' ? 'selected' : '') + '>高</option>' +
+            '<option value="critical" ' + (failure.severity === 'critical' ? 'selected' : '') + '>緊急</option>' +
+            '</select>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">ステータス *</label>' +
+            '<select id="edit-failure-status" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            '<option value="reported" ' + (failure.status === 'reported' ? 'selected' : '') + '>報告済</option>' +
+            '<option value="investigating" ' + (failure.status === 'investigating' ? 'selected' : '') + '>調査中</option>' +
+            '<option value="in_repair" ' + (failure.status === 'in_repair' ? 'selected' : '') + '>修理中</option>' +
+            '<option value="resolved" ' + (failure.status === 'resolved' ? 'selected' : '') + '>解決済</option>' +
+            '<option value="closed" ' + (failure.status === 'closed' ? 'selected' : '') + '>クローズ</option>' +
+            '</select>' +
+            '</div>' +
+            '</div>' +
+            
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">故障タイプ</label>' +
+            '<input type="text" id="edit-failure-type" value="' + (failure.failure_type || '') + '" placeholder="電気、機械、制御など" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            '</div>' +
+            
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">症状</label>' +
+            '<textarea id="edit-failure-symptoms" placeholder="故障の症状を記入" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600" rows="2">' +
+            (failure.symptoms || '') +
+            '</textarea>' +
+            '</div>' +
+            
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">詳細説明</label>' +
+            '<textarea id="edit-failure-description" placeholder="詳しい説明" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600" rows="3">' +
+            (failure.description || '') +
+            '</textarea>' +
+            '</div>' +
+            
+            '<div class="flex gap-2">' +
+            '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+            'キャンセル' +
+            '</button>' +
+            '<button onclick="updateFailure(' + failureId + ')" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition">' +
+            '<i class="fas fa-save mr-2"></i>更新' +
+            '</button>' +
+            '</div>' +
+            
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error editing failure:', error);
+        showNotification('編集画面の表示に失敗しました', 'error');
+    }
+};
+
+// Update failure
+window.updateFailure = async function(failureId) {
+    const equipmentId = document.getElementById('edit-failure-equipment').value;
+    const title = document.getElementById('edit-failure-title').value;
+    const severity = document.getElementById('edit-failure-severity').value;
+    const status = document.getElementById('edit-failure-status').value;
+    const failureType = document.getElementById('edit-failure-type').value;
+    const symptoms = document.getElementById('edit-failure-symptoms').value;
+    const description = document.getElementById('edit-failure-description').value;
+    
+    if (!equipmentId || !title || !severity || !status) {
+        showNotification('必須項目を入力してください', 'error');
+        return;
+    }
+    
+    try {
+        await axios.put('/api/failures/' + failureId, {
+            equipment_id: parseInt(equipmentId),
+            title,
+            severity,
+            status,
+            failure_type: failureType || null,
+            symptoms: symptoms || null,
+            description: description || null
+        });
+        
+        showNotification('故障報告を更新しました', 'success');
+        closeDialog();
+        loadFailures();
+    } catch (error) {
+        console.error('Error updating failure:', error);
+        showNotification('更新に失敗しました', 'error');
+    }
+};
+
+// ============================================
+// Work History Detail Functions
+// ============================================
+
+// View work history detail
+window.viewWorkDetail = async function(workId) {
+    try {
+        const response = await axios.get('/api/work-history');
+        const work = response.data.find(w => w.id === workId);
+        
+        if (!work) {
+            showNotification('作業履歴が見つかりません', 'error');
+            return;
+        }
+        
+        // Get work parts
+        let workParts = [];
+        try {
+            const partsResponse = await axios.get('/api/work-history/' + workId + '/parts');
+            workParts = partsResponse.data;
+        } catch (error) {
+            console.log('No parts for this work');
+        }
+        
+        const partsHTML = workParts.length > 0 ? 
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">使用部品</label>' +
+            '<div class="mt-2 space-y-2">' +
+            workParts.map(part => 
+                '<div class="bg-gray-800/50 rounded p-2">' +
+                '<div class="text-white text-sm">' + part.part_name + '</div>' +
+                '<div class="text-gray-400 text-xs">数量: ' + part.quantity + ' | 単価: ¥' + (part.unit_cost || 0).toLocaleString() + '</div>' +
+                '</div>'
+            ).join('') +
+            '</div>' +
+            '</div>' : '';
+        
+        const dialog = '<div class="glass rounded-lg p-6 max-w-2xl mx-auto max-h-[80vh] overflow-y-auto">' +
+            '<div class="flex items-start justify-between mb-4">' +
+            '<h3 class="text-white font-bold text-lg">' +
+            '<i class="fas fa-tools mr-2 text-purple-400"></i>' +
+            (work.title || '作業詳細') +
+            '</h3>' +
+            '<button onclick="closeDialog()" class="text-gray-400 hover:text-white">' +
+            '<i class="fas fa-times"></i>' +
+            '</button>' +
+            '</div>' +
+            
+            '<div class="grid grid-cols-2 gap-4 mb-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">対象設備</label>' +
+            '<p class="text-white text-sm mt-1">' +
+            '<i class="fas fa-cogs mr-2 text-blue-400"></i>' +
+            (work.equipment_name || '不明') +
+            '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">作業タイプ</label>' +
+            '<p class="text-white text-sm mt-1">' + (work.work_type || '-') + '</p>' +
+            '</div>' +
+            '</div>' +
+            
+            '<div class="grid grid-cols-3 gap-4 mb-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">作業時間</label>' +
+            '<p class="text-white text-sm mt-1">' + (work.actual_hours || 0) + '時間</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">合計コスト</label>' +
+            '<p class="text-white text-sm mt-1">¥' + (work.total_cost || 0).toLocaleString() + '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">ステータス</label>' +
+            '<p class="text-white text-sm mt-1">' + (work.status || '-') + '</p>' +
+            '</div>' +
+            '</div>' +
+            
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">作業日時</label>' +
+            '<p class="text-white text-sm mt-1">' +
+            new Date(work.start_time || work.created_at).toLocaleString('ja-JP') +
+            (work.end_time ? ' - ' + new Date(work.end_time).toLocaleString('ja-JP') : '') +
+            '</p>' +
+            '</div>' +
+            
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">作業内容</label>' +
+            '<p class="text-white text-sm mt-1 whitespace-pre-wrap">' +
+            (work.description || '記載なし') +
+            '</p>' +
+            '</div>' +
+            
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs">作業者</label>' +
+            '<p class="text-white text-sm mt-1">' + (work.performer_name || '不明') + '</p>' +
+            '</div>' +
+            
+            partsHTML +
+            
+            '<div class="flex gap-2 mt-6">' +
+            '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+            '閉じる' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error viewing work detail:', error);
+        showNotification('作業履歴の取得に失敗しました', 'error');
+    }
+};
+
+// ============================================
+// Part Detail Functions
+// ============================================
+
+// View part detail
+window.viewPartDetail = async function(partId) {
+    try {
+        const response = await axios.get('/api/parts');
+        const part = response.data.find(p => p.id === partId);
+        
+        if (!part) {
+            showNotification('部品が見つかりません', 'error');
+            return;
+        }
+        
+        const stock = part.calculated_stock || part.current_stock || 0;
+        const isLowStock = stock <= part.min_stock_level;
+        
+        // Get inventory transactions
+        let transactions = [];
+        try {
+            const txResponse = await axios.get('/api/parts/' + partId + '/transactions');
+            transactions = txResponse.data;
+        } catch (error) {
+            console.log('No transactions for this part');
+        }
+        
+        const transactionsHTML = transactions.length > 0 ?
+            '<div class="mb-4">' +
+            '<label class="text-gray-400 text-xs mb-2 block">在庫移動履歴</label>' +
+            '<div class="max-h-48 overflow-y-auto space-y-2">' +
+            transactions.map(tx => {
+                const isIn = tx.transaction_type === 'in';
+                return '<div class="bg-gray-800/50 rounded p-2">' +
+                    '<div class="flex items-center justify-between">' +
+                    '<span class="text-white text-sm">' +
+                    '<i class="fas fa-' + (isIn ? 'arrow-down text-green-400' : 'arrow-up text-red-400') + ' mr-2"></i>' +
+                    (isIn ? '入庫' : '出庫') + ': ' + tx.quantity +
+                    '</span>' +
+                    '<span class="text-gray-400 text-xs">' +
+                    new Date(tx.transaction_date).toLocaleDateString('ja-JP') +
+                    '</span>' +
+                    '</div>' +
+                    (tx.notes ? '<div class="text-gray-400 text-xs mt-1">' + tx.notes + '</div>' : '') +
+                    '</div>';
+            }).join('') +
+            '</div>' +
+            '</div>' : '';
+        
+        const dialog = '<div class="glass rounded-lg p-6 max-w-2xl mx-auto max-h-[80vh] overflow-y-auto">' +
+            '<div class="flex items-start justify-between mb-4">' +
+            '<h3 class="text-white font-bold text-lg">' +
+            '<i class="fas fa-box mr-2 text-yellow-400"></i>' +
+            part.name +
+            '</h3>' +
+            '<button onclick="closeDialog()" class="text-gray-400 hover:text-white">' +
+            '<i class="fas fa-times"></i>' +
+            '</button>' +
+            '</div>' +
+            
+            (isLowStock ? 
+                '<div class="bg-red-500/20 border border-red-500 rounded-lg p-3 mb-4">' +
+                '<div class="flex items-center text-red-400 text-sm">' +
+                '<i class="fas fa-exclamation-triangle mr-2"></i>' +
+                '<span>低在庫アラート - 発注が必要です</span>' +
+                '</div>' +
+                '</div>' : '') +
+            
+            '<div class="grid grid-cols-2 gap-4 mb-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">品番</label>' +
+            '<p class="text-white text-sm mt-1">' + (part.part_number || '-') + '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">カテゴリ</label>' +
+            '<p class="text-white text-sm mt-1">' + (part.category || '-') + '</p>' +
+            '</div>' +
+            '</div>' +
+            
+            '<div class="grid grid-cols-3 gap-4 mb-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">現在庫数</label>' +
+            '<p class="text-white text-lg font-bold mt-1 ' + (isLowStock ? 'text-red-400' : 'text-green-400') + '">' +
+            stock +
+            '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">最小在庫</label>' +
+            '<p class="text-white text-sm mt-1">' + (part.min_stock_level || 0) + '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">単価</label>' +
+            '<p class="text-white text-sm mt-1">¥' + (part.unit_price || 0).toLocaleString() + '</p>' +
+            '</div>' +
+            '</div>' +
+            
+            '<div class="grid grid-cols-2 gap-4 mb-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">保管場所</label>' +
+            '<p class="text-white text-sm mt-1">' + (part.location || '-') + '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">メーカー</label>' +
+            '<p class="text-white text-sm mt-1">' + (part.manufacturer || '-') + '</p>' +
+            '</div>' +
+            '</div>' +
+            
+            (part.description ? 
+                '<div class="mb-4">' +
+                '<label class="text-gray-400 text-xs">説明</label>' +
+                '<p class="text-white text-sm mt-1 whitespace-pre-wrap">' + part.description + '</p>' +
+                '</div>' : '') +
+            
+            transactionsHTML +
+            
+            '<div class="flex gap-2 mt-6">' +
+            '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+            '閉じる' +
+            '</button>' +
+            '<button onclick="showInventoryMovement(' + partId + ')" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition">' +
+            '<i class="fas fa-exchange-alt mr-2"></i>在庫移動' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error viewing part detail:', error);
+        showNotification('部品情報の取得に失敗しました', 'error');
+    }
+};
+
+// Show inventory movement dialog
+window.showInventoryMovement = async function(partId) {
+    const response = await axios.get('/api/parts');
+    const part = response.data.find(p => p.id === partId);
+    
+    if (!part) {
+        showNotification('部品が見つかりません', 'error');
+        return;
+    }
+    
+    const dialog = '<div class="glass rounded-lg p-6 max-w-md mx-auto">' +
+        '<h3 class="text-white font-bold text-lg mb-4">' +
+        '<i class="fas fa-exchange-alt mr-2 text-blue-400"></i>' +
+        '在庫移動' +
+        '</h3>' +
+        '<div class="mb-4">' +
+        '<p class="text-gray-300 text-sm">部品: <span class="text-white font-semibold">' + part.name + '</span></p>' +
+        '<p class="text-gray-400 text-xs mt-1">現在庫: ' + (part.current_stock || 0) + '</p>' +
+        '</div>' +
+        '<div class="space-y-4">' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">移動タイプ</label>' +
+        '<select id="inventory-tx-type" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '<option value="in">入庫</option>' +
+        '<option value="out">出庫</option>' +
+        '</select>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">数量</label>' +
+        '<input type="number" id="inventory-tx-quantity" min="1" value="1" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">備考（任意）</label>' +
+        '<input type="text" id="inventory-tx-notes" placeholder="移動理由など" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div class="flex gap-2">' +
+        '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+        'キャンセル' +
+        '</button>' +
+        '<button onclick="submitInventoryMovement(' + partId + ')" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition">' +
+        '実行' +
+        '</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+};
+
+// Submit inventory movement
+window.submitInventoryMovement = async function(partId) {
+    const txType = document.getElementById('inventory-tx-type').value;
+    const quantity = document.getElementById('inventory-tx-quantity').value;
+    const notes = document.getElementById('inventory-tx-notes').value;
+    
+    if (!quantity || parseInt(quantity) <= 0) {
+        showNotification('数量を正しく入力してください', 'error');
+        return;
+    }
+    
+    try {
+        await axios.post('/api/inventory/transactions', {
+            part_id: partId,
+            transaction_type: txType,
+            quantity: parseInt(quantity),
+            transaction_date: new Date().toISOString().split('T')[0],
+            notes: notes || null
+        });
+        
+        showNotification('在庫移動を記録しました', 'success');
+        closeDialog();
+        loadParts();
+    } catch (error) {
+        console.error('Error submitting inventory movement:', error);
+        showNotification('在庫移動に失敗しました', 'error');
+    }
+};
+
 // Export functions
 window.showNotification = showNotification;
 window.showDialog = showDialog;
