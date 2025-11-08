@@ -528,10 +528,1309 @@ app.delete('/api/workorders/:id', async (c) => {
 })
 
 // ============================================
+// Checklist Management API
+// ============================================
+
+// Get all checklist templates
+app.get('/api/checklists/templates', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT t.*, 
+             COUNT(DISTINCT i.id) as item_count,
+             COUNT(DISTINCT e.id) as execution_count
+      FROM checklist_templates t
+      LEFT JOIN checklist_items i ON t.id = i.template_id
+      LEFT JOIN checklist_executions e ON t.id = e.template_id
+      WHERE t.is_active = 1
+      GROUP BY t.id
+      ORDER BY t.created_at DESC
+    `).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch checklist templates', details: error.message }, 500)
+  }
+})
+
+// Get single checklist template by ID
+app.get('/api/checklists/templates/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const template = await c.env.DB.prepare(`
+      SELECT * FROM checklist_templates WHERE id = ?
+    `).bind(id).first()
+    
+    if (!template) {
+      return c.json({ error: 'Template not found' }, 404)
+    }
+    return c.json(template)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch template', details: error.message }, 500)
+  }
+})
+
+// Create new checklist template
+app.post('/api/checklists/templates', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO checklist_templates (name, description, frequency, equipment_type, is_active)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      data.name,
+      data.description || null,
+      data.frequency || 'monthly',
+      data.equipment_type || null,
+      data.is_active !== undefined ? data.is_active : 1
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create template', details: error.message }, 500)
+  }
+})
+
+// Update checklist template
+app.put('/api/checklists/templates/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE checklist_templates 
+      SET name = ?, description = ?, frequency = ?, equipment_type = ?, is_active = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.name,
+      data.description || null,
+      data.frequency,
+      data.equipment_type || null,
+      data.is_active !== undefined ? data.is_active : 1,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update template', details: error.message }, 500)
+  }
+})
+
+// Delete checklist template
+app.delete('/api/checklists/templates/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    
+    // Delete related items first (cascade)
+    await c.env.DB.prepare('DELETE FROM checklist_items WHERE template_id = ?').bind(id).run()
+    
+    // Delete template
+    await c.env.DB.prepare('DELETE FROM checklist_templates WHERE id = ?').bind(id).run()
+    
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete template', details: error.message }, 500)
+  }
+})
+
+// Get checklist items for a template
+app.get('/api/checklists/items/:templateId', async (c) => {
+  try {
+    const templateId = c.req.param('templateId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM checklist_items 
+      WHERE template_id = ? 
+      ORDER BY item_order ASC
+    `).bind(templateId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch checklist items', details: error.message }, 500)
+  }
+})
+
+// Create checklist item
+app.post('/api/checklists/items', async (c) => {
+  try {
+    const data = await c.req.json()
+    
+    // Get max order for this template
+    const maxOrder = await c.env.DB.prepare(`
+      SELECT COALESCE(MAX(item_order), 0) as max_order 
+      FROM checklist_items 
+      WHERE template_id = ?
+    `).bind(data.template_id).first()
+    
+    const result = await c.env.DB.prepare(`
+      INSERT INTO checklist_items (template_id, item_text, category, check_type, 
+                                    normal_range, options, item_order, is_required)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.template_id,
+      data.item_text || data.item_name, // Accept both field names
+      data.category || null,
+      data.check_type || 'checkbox',
+      data.normal_range || data.expected_value || null,
+      data.options || null,
+      (maxOrder?.max_order || 0) + 1,
+      data.is_required !== undefined ? data.is_required : 1
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create checklist item', details: error.message }, 500)
+  }
+})
+
+// Update checklist item
+app.put('/api/checklists/items/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE checklist_items 
+      SET item_text = ?, category = ?, check_type = ?, normal_range = ?,
+          options = ?, item_order = ?, is_required = ?
+      WHERE id = ?
+    `).bind(
+      data.item_text || data.item_name,
+      data.category || null,
+      data.check_type,
+      data.normal_range || data.expected_value || null,
+      data.options || null,
+      data.item_order,
+      data.is_required,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update checklist item', details: error.message }, 500)
+  }
+})
+
+// Delete checklist item
+app.delete('/api/checklists/items/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM checklist_items WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete checklist item', details: error.message }, 500)
+  }
+})
+
+// Get checklist executions for equipment
+app.get('/api/checklists/executions/:equipmentId', async (c) => {
+  try {
+    const equipmentId = c.req.param('equipmentId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT e.*, t.name as template_name, t.equipment_type,
+             eq.name as equipment_name
+      FROM checklist_executions e
+      LEFT JOIN checklist_templates t ON e.template_id = t.id
+      LEFT JOIN equipment eq ON e.equipment_id = eq.id
+      WHERE e.equipment_id = ?
+      ORDER BY e.execution_date DESC
+    `).bind(equipmentId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch executions', details: error.message }, 500)
+  }
+})
+
+// Get all checklist executions
+app.get('/api/checklists/executions', async (c) => {
+  try {
+    const status = c.req.query('status')
+    const limit = c.req.query('limit') || '50'
+    
+    let query = `
+      SELECT e.*, t.name as template_name, t.equipment_type,
+             eq.name as equipment_name
+      FROM checklist_executions e
+      LEFT JOIN checklist_templates t ON e.template_id = t.id
+      LEFT JOIN equipment eq ON e.equipment_id = eq.id
+    `
+    
+    if (status) {
+      query += ` WHERE e.status = ?`
+    }
+    
+    query += ` ORDER BY e.execution_date DESC LIMIT ?`
+    
+    const { results } = status 
+      ? await c.env.DB.prepare(query).bind(status, limit).all()
+      : await c.env.DB.prepare(query).bind(limit).all()
+    
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch executions', details: error.message }, 500)
+  }
+})
+
+// Start new checklist execution
+app.post('/api/checklists/executions', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO checklist_executions (template_id, equipment_id, executor_name, 
+                                         execution_date, status)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      data.template_id,
+      data.equipment_id,
+      data.executor_name || data.inspector_name || null,
+      data.execution_date || new Date().toISOString(),
+      'in_progress'
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data, status: 'in_progress' }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to start execution', details: error.message }, 500)
+  }
+})
+
+// Update checklist execution (complete)
+app.put('/api/checklists/executions/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE checklist_executions 
+      SET status = ?, notes = ?, completed_at = ?
+      WHERE id = ?
+    `).bind(
+      data.status || 'completed',
+      data.notes || null,
+      data.status === 'completed' ? new Date().toISOString() : null,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update execution', details: error.message }, 500)
+  }
+})
+
+// Record checklist result
+app.post('/api/checklists/results', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO checklist_results (execution_id, item_id, check_value, 
+                                      is_normal, notes)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      data.execution_id,
+      data.item_id,
+      data.check_value || data.result_value || null,
+      data.is_normal !== undefined ? data.is_normal : (data.is_pass !== undefined ? data.is_pass : 1),
+      data.notes || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to record result', details: error.message }, 500)
+  }
+})
+
+// Get results for an execution
+app.get('/api/checklists/results/:executionId', async (c) => {
+  try {
+    const executionId = c.req.param('executionId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT r.*, i.item_text, i.check_type, i.normal_range, i.options
+      FROM checklist_results r
+      LEFT JOIN checklist_items i ON r.item_id = i.id
+      WHERE r.execution_id = ?
+      ORDER BY i.item_order ASC
+    `).bind(executionId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch results', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Work History API
+// ============================================
+
+// Get work history by equipment
+app.get('/api/work-history/:equipmentId', async (c) => {
+  try {
+    const equipmentId = c.req.param('equipmentId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT w.*, e.name as equipment_name, e.type as equipment_type
+      FROM work_history w
+      LEFT JOIN equipment e ON w.equipment_id = e.id
+      WHERE w.equipment_id = ?
+      ORDER BY w.work_date DESC
+    `).bind(equipmentId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch work history', details: error.message }, 500)
+  }
+})
+
+// Get all work history
+app.get('/api/work-history', async (c) => {
+  try {
+    const limit = c.req.query('limit') || '100'
+    const workType = c.req.query('type')
+    
+    let query = `
+      SELECT w.*, e.name as equipment_name, e.type as equipment_type
+      FROM work_history w
+      LEFT JOIN equipment e ON w.equipment_id = e.id
+    `
+    
+    if (workType) {
+      query += ` WHERE w.work_type = ?`
+    }
+    
+    query += ` ORDER BY w.work_date DESC LIMIT ?`
+    
+    const { results } = workType
+      ? await c.env.DB.prepare(query).bind(workType, limit).all()
+      : await c.env.DB.prepare(query).bind(limit).all()
+    
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch work history', details: error.message }, 500)
+  }
+})
+
+// Create work history record
+app.post('/api/work-history', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO work_history (equipment_id, work_order_id, work_type, title,
+                                 description, executor_name, start_time, end_time, actual_hours, 
+                                 labor_cost, parts_cost, other_cost, total_cost, status, result_notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.equipment_id,
+      data.work_order_id || null,
+      data.work_type,
+      data.title || data.work_description || 'Work performed',
+      data.description || data.work_description || null,
+      data.executor_name || data.performed_by || null,
+      data.start_time || data.work_date || new Date().toISOString(),
+      data.end_time || null,
+      data.actual_hours || data.duration_hours || null,
+      data.labor_cost || null,
+      data.parts_cost || data.material_cost || null,
+      data.other_cost || null,
+      data.total_cost || null,
+      data.status || data.result || 'completed',
+      data.result_notes || data.notes || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create work history', details: error.message }, 500)
+  }
+})
+
+// Update work history
+app.put('/api/work-history/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE work_history 
+      SET work_type = ?, title = ?, description = ?, executor_name = ?,
+          start_time = ?, end_time = ?, actual_hours = ?,
+          labor_cost = ?, parts_cost = ?, other_cost = ?, total_cost = ?,
+          status = ?, result_notes = ?
+      WHERE id = ?
+    `).bind(
+      data.work_type,
+      data.title || data.work_description,
+      data.description || data.work_description,
+      data.executor_name || data.performed_by || null,
+      data.start_time || data.work_date,
+      data.end_time || null,
+      data.actual_hours || data.duration_hours || null,
+      data.labor_cost || null,
+      data.parts_cost || data.material_cost || null,
+      data.other_cost || null,
+      data.total_cost || null,
+      data.status || data.result,
+      data.result_notes || data.notes || null,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update work history', details: error.message }, 500)
+  }
+})
+
+// Delete work history
+app.delete('/api/work-history/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM work_history WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete work history', details: error.message }, 500)
+  }
+})
+
+// Get parts used in work history
+app.get('/api/work-history/:id/parts', async (c) => {
+  try {
+    const workHistoryId = c.req.param('id')
+    const { results } = await c.env.DB.prepare(`
+      SELECT wp.*, p.name as part_name, p.part_number, p.unit_price
+      FROM work_parts wp
+      LEFT JOIN parts p ON wp.part_id = p.id
+      WHERE wp.work_history_id = ?
+    `).bind(workHistoryId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch work parts', details: error.message }, 500)
+  }
+})
+
+// Add part usage to work history
+app.post('/api/work-history/:id/parts', async (c) => {
+  try {
+    const workHistoryId = c.req.param('id')
+    const data = await c.req.json()
+    
+    const result = await c.env.DB.prepare(`
+      INSERT INTO work_parts (work_history_id, part_id, quantity_used, unit_cost, notes)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      workHistoryId,
+      data.part_id,
+      data.quantity_used,
+      data.unit_cost || null,
+      data.notes || null
+    ).run()
+    
+    // Update inventory
+    await c.env.DB.prepare(`
+      INSERT INTO inventory_transactions (part_id, transaction_type, quantity, 
+                                           unit_price, reference_type, reference_id, notes)
+      VALUES (?, 'out', ?, ?, 'work_history', ?, ?)
+    `).bind(
+      data.part_id,
+      data.quantity_used,
+      data.unit_cost || null,
+      workHistoryId,
+      `Used in work: ${workHistoryId}`
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to add work part', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Failure Reports API
+// ============================================
+
+// Get all failure reports
+app.get('/api/failures', async (c) => {
+  try {
+    const status = c.req.query('status')
+    const severity = c.req.query('severity')
+    const limit = c.req.query('limit') || '100'
+    
+    let query = `
+      SELECT f.*, e.name as equipment_name, e.type as equipment_type
+      FROM failure_reports f
+      LEFT JOIN equipment e ON f.equipment_id = e.id
+      WHERE 1=1
+    `
+    
+    const bindings = []
+    
+    if (status) {
+      query += ` AND f.status = ?`
+      bindings.push(status)
+    }
+    
+    if (severity) {
+      query += ` AND f.severity = ?`
+      bindings.push(severity)
+    }
+    
+    query += ` ORDER BY f.failure_date DESC LIMIT ?`
+    bindings.push(limit)
+    
+    const { results } = await c.env.DB.prepare(query).bind(...bindings).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch failure reports', details: error.message }, 500)
+  }
+})
+
+// Get failure reports by equipment
+app.get('/api/failures/equipment/:equipmentId', async (c) => {
+  try {
+    const equipmentId = c.req.param('equipmentId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM failure_reports 
+      WHERE equipment_id = ?
+      ORDER BY failure_date DESC
+    `).bind(equipmentId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch failure reports', details: error.message }, 500)
+  }
+})
+
+// Create failure report
+app.post('/api/failures', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO failure_reports (equipment_id, reporter_name, report_date, failure_type, severity,
+                                     title, description, symptoms, root_cause, corrective_action, 
+                                     status, downtime_start, downtime_hours, assigned_to)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.equipment_id,
+      data.reporter_name || data.reported_by || 'Unknown',
+      data.report_date || data.failure_date || new Date().toISOString(),
+      data.failure_type || 'other',
+      data.severity || 'medium',
+      data.title || 'Failure Report',
+      data.description,
+      data.symptoms || null,
+      data.root_cause || null,
+      data.corrective_action || null,
+      data.status || 'reported',
+      data.downtime_start || null,
+      data.downtime_hours || null,
+      data.assigned_to || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create failure report', details: error.message }, 500)
+  }
+})
+
+// Update failure report
+app.put('/api/failures/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE failure_reports 
+      SET failure_type = ?, severity = ?, title = ?, description = ?, symptoms = ?,
+          root_cause = ?, corrective_action = ?, status = ?, assigned_to = ?,
+          resolved_date = ?, downtime_end = ?, downtime_hours = ?, cost = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.failure_type,
+      data.severity,
+      data.title,
+      data.description,
+      data.symptoms || null,
+      data.root_cause || null,
+      data.corrective_action || null,
+      data.status,
+      data.assigned_to || null,
+      data.status === 'resolved' ? new Date().toISOString() : null,
+      data.downtime_end || null,
+      data.downtime_hours || null,
+      data.cost || null,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update failure report', details: error.message }, 500)
+  }
+})
+
+// Delete failure report
+app.delete('/api/failures/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM failure_reports WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete failure report', details: error.message }, 500)
+  }
+})
+
+// Get failure statistics
+app.get('/api/failures/statistics', async (c) => {
+  try {
+    const stats = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN severity = 'low' THEN 1 ELSE 0 END) as low,
+        SUM(CASE WHEN severity = 'medium' THEN 1 ELSE 0 END) as medium,
+        SUM(CASE WHEN severity = 'high' THEN 1 ELSE 0 END) as high,
+        SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as critical,
+        SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open,
+        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved,
+        AVG(downtime_hours) as avg_downtime
+      FROM failure_reports
+    `).first()
+    
+    return c.json(stats)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch failure statistics', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Parts & Inventory Management API
+// ============================================
+
+// Get all parts
+app.get('/api/parts', async (c) => {
+  try {
+    const category = c.req.query('category')
+    const lowStock = c.req.query('low_stock')
+    
+    let query = `
+      SELECT p.*,
+             COALESCE(
+               (SELECT SUM(CASE 
+                 WHEN transaction_type = 'in' THEN quantity
+                 WHEN transaction_type = 'out' THEN -quantity
+                 ELSE 0 END)
+                FROM inventory_transactions 
+                WHERE part_id = p.id), 0
+             ) as calculated_stock
+      FROM parts p
+      WHERE 1=1
+    `
+    
+    const bindings = []
+    
+    if (category) {
+      query += ` AND p.category = ?`
+      bindings.push(category)
+    }
+    
+    if (lowStock === 'true') {
+      query += ` HAVING calculated_stock <= p.min_stock_level`
+    }
+    
+    query += ` ORDER BY p.name ASC`
+    
+    const { results } = await c.env.DB.prepare(query).bind(...bindings).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch parts', details: error.message }, 500)
+  }
+})
+
+// Get single part with stock info
+app.get('/api/parts/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const part = await c.env.DB.prepare(`
+      SELECT p.*,
+             COALESCE(
+               (SELECT SUM(CASE 
+                 WHEN transaction_type = 'in' THEN quantity
+                 WHEN transaction_type = 'out' THEN -quantity
+                 ELSE 0 END)
+                FROM inventory_transactions 
+                WHERE part_id = p.id), 0
+             ) as calculated_stock
+      FROM parts p
+      WHERE p.id = ?
+    `).bind(id).first()
+    
+    if (!part) {
+      return c.json({ error: 'Part not found' }, 404)
+    }
+    
+    return c.json(part)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch part', details: error.message }, 500)
+  }
+})
+
+// Create new part
+app.post('/api/parts', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO parts (name, part_number, category, description, 
+                         unit_price, unit, min_stock_level, current_stock, 
+                         manufacturer, model_number, location)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.name,
+      data.part_number || null,
+      data.category || 'general',
+      data.description || null,
+      data.unit_price || null,
+      data.unit || 'piece',
+      data.min_stock_level || 0,
+      data.current_stock || 0,
+      data.manufacturer || null,
+      data.model_number || null,
+      data.location || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create part', details: error.message }, 500)
+  }
+})
+
+// Update part
+app.put('/api/parts/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE parts 
+      SET name = ?, part_number = ?, category = ?, description = ?,
+          unit_price = ?, unit = ?, min_stock_level = ?, current_stock = ?,
+          manufacturer = ?, model_number = ?, location = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.name,
+      data.part_number || null,
+      data.category,
+      data.description || null,
+      data.unit_price || null,
+      data.unit,
+      data.min_stock_level,
+      data.current_stock,
+      data.manufacturer || null,
+      data.model_number || null,
+      data.location || null,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update part', details: error.message }, 500)
+  }
+})
+
+// Delete part
+app.delete('/api/parts/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM parts WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete part', details: error.message }, 500)
+  }
+})
+
+// Get inventory transactions for a part
+app.get('/api/parts/:id/transactions', async (c) => {
+  try {
+    const partId = c.req.param('id')
+    const limit = c.req.query('limit') || '50'
+    
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM inventory_transactions 
+      WHERE part_id = ?
+      ORDER BY transaction_date DESC
+      LIMIT ?
+    `).bind(partId, limit).all()
+    
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch transactions', details: error.message }, 500)
+  }
+})
+
+// Record inventory transaction
+app.post('/api/inventory/transactions', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO inventory_transactions (part_id, transaction_type, quantity,
+                                           unit_price, reference_type, reference_id, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.part_id,
+      data.transaction_type,
+      data.quantity,
+      data.unit_price || null,
+      data.reference_type || null,
+      data.reference_id || null,
+      data.notes || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to record transaction', details: error.message }, 500)
+  }
+})
+
+// Get low stock alerts
+app.get('/api/inventory/low-stock', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT p.*,
+             COALESCE(
+               (SELECT SUM(CASE 
+                 WHEN transaction_type = 'in' THEN quantity
+                 WHEN transaction_type = 'out' THEN -quantity
+                 ELSE 0 END)
+                FROM inventory_transactions 
+                WHERE part_id = p.id), 0
+             ) as calculated_stock
+      FROM parts p
+      HAVING calculated_stock <= p.min_stock_level
+      ORDER BY calculated_stock ASC
+    `).all()
+    
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch low stock items', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Cost Management & Budget API
+// ============================================
+
+// Get maintenance budgets
+app.get('/api/budgets', async (c) => {
+  try {
+    const fiscalYear = c.req.query('fiscal_year')
+    
+    let query = `SELECT * FROM maintenance_budgets WHERE 1=1`
+    const bindings = []
+    
+    if (fiscalYear) {
+      query += ` AND fiscal_year = ?`
+      bindings.push(fiscalYear)
+    }
+    
+    query += ` ORDER BY fiscal_year DESC, category ASC`
+    
+    const { results } = await c.env.DB.prepare(query).bind(...bindings).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch budgets', details: error.message }, 500)
+  }
+})
+
+// Create budget
+app.post('/api/budgets', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO maintenance_budgets (fiscal_year, department, category, budget_amount, 
+                                        spent_amount, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.fiscal_year,
+      data.department || null,
+      data.category,
+      data.budget_amount || data.budgeted_amount,
+      data.spent_amount || 0,
+      data.notes || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create budget', details: error.message }, 500)
+  }
+})
+
+// Update budget
+app.put('/api/budgets/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE maintenance_budgets 
+      SET budget_amount = ?, spent_amount = ?, notes = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.budget_amount || data.budgeted_amount,
+      data.spent_amount,
+      data.notes || null,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update budget', details: error.message }, 500)
+  }
+})
+
+// Get cost analysis
+app.get('/api/costs/analysis', async (c) => {
+  try {
+    const startDate = c.req.query('start_date')
+    const endDate = c.req.query('end_date')
+    const groupBy = c.req.query('group_by') || 'month' // month, category, equipment
+    
+    // Total costs by work type
+    const costsByType = await c.env.DB.prepare(`
+      SELECT 
+        work_type,
+        COUNT(*) as work_count,
+        SUM(labor_cost) as total_labor,
+        SUM(parts_cost) as total_parts,
+        SUM(other_cost) as total_other,
+        SUM(total_cost) as total_cost
+      FROM work_history
+      WHERE start_time >= ? AND start_time <= ?
+      GROUP BY work_type
+    `).bind(startDate || '2020-01-01', endDate || '2099-12-31').all()
+    
+    // Costs by equipment
+    const costsByEquipment = await c.env.DB.prepare(`
+      SELECT 
+        e.id, e.name, e.type,
+        COUNT(w.id) as work_count,
+        SUM(w.total_cost) as total_cost
+      FROM equipment e
+      LEFT JOIN work_history w ON e.id = w.equipment_id
+      WHERE w.start_time >= ? AND w.start_time <= ?
+      GROUP BY e.id
+      HAVING total_cost > 0
+      ORDER BY total_cost DESC
+      LIMIT 10
+    `).bind(startDate || '2020-01-01', endDate || '2099-12-31').all()
+    
+    // Monthly trend
+    const monthlyTrend = await c.env.DB.prepare(`
+      SELECT 
+        strftime('%Y-%m', start_time) as month,
+        COUNT(*) as work_count,
+        SUM(total_cost) as total_cost
+      FROM work_history
+      WHERE start_time >= ? AND start_time <= ?
+      GROUP BY month
+      ORDER BY month ASC
+    `).bind(startDate || '2020-01-01', endDate || '2099-12-31').all()
+    
+    return c.json({
+      costsByType: costsByType.results,
+      costsByEquipment: costsByEquipment.results,
+      monthlyTrend: monthlyTrend.results
+    })
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch cost analysis', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Equipment Documents API
+// ============================================
+
+// Get documents for equipment
+app.get('/api/documents/equipment/:equipmentId', async (c) => {
+  try {
+    const equipmentId = c.req.param('equipmentId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM equipment_documents 
+      WHERE equipment_id = ?
+      ORDER BY uploaded_date DESC
+    `).bind(equipmentId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch documents', details: error.message }, 500)
+  }
+})
+
+// Get all documents
+app.get('/api/documents', async (c) => {
+  try {
+    const docType = c.req.query('type')
+    const limit = c.req.query('limit') || '100'
+    
+    let query = `
+      SELECT d.*, e.name as equipment_name
+      FROM equipment_documents d
+      LEFT JOIN equipment e ON d.equipment_id = e.id
+      WHERE 1=1
+    `
+    
+    const bindings = []
+    
+    if (docType) {
+      query += ` AND d.document_type = ?`
+      bindings.push(docType)
+    }
+    
+    query += ` ORDER BY d.uploaded_date DESC LIMIT ?`
+    bindings.push(limit)
+    
+    const { results } = await c.env.DB.prepare(query).bind(...bindings).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch documents', details: error.message }, 500)
+  }
+})
+
+// Create document record
+app.post('/api/documents', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO equipment_documents (equipment_id, document_type, document_name,
+                                        file_path, file_size, uploaded_by, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.equipment_id || null,
+      data.document_type,
+      data.document_name,
+      data.file_path,
+      data.file_size || null,
+      data.uploaded_by || null,
+      data.description || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create document', details: error.message }, 500)
+  }
+})
+
+// Update document
+app.put('/api/documents/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE equipment_documents 
+      SET document_name = ?, description = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.document_name,
+      data.description || null,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update document', details: error.message }, 500)
+  }
+})
+
+// Delete document
+app.delete('/api/documents/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM equipment_documents WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete document', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Notifications & Alerts API
+// ============================================
+
+// Get notifications
+app.get('/api/notifications', async (c) => {
+  try {
+    const status = c.req.query('status') // unread, read, acknowledged, all
+    const limit = c.req.query('limit') || '50'
+    
+    let query = `SELECT * FROM notifications WHERE 1=1`
+    const bindings = []
+    
+    if (status && status !== 'all') {
+      query += ` AND status = ?`
+      bindings.push(status)
+    }
+    
+    query += ` ORDER BY sent_at DESC LIMIT ?`
+    bindings.push(limit)
+    
+    const { results } = await c.env.DB.prepare(query).bind(...bindings).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch notifications', details: error.message }, 500)
+  }
+})
+
+// Create notification
+app.post('/api/notifications', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO notifications (notification_type, title, message, priority, status,
+                                  reference_type, reference_id, sent_to)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.notification_type,
+      data.title,
+      data.message,
+      data.priority || data.severity || 'normal',
+      data.status || 'unread',
+      data.reference_type || null,
+      data.reference_id || null,
+      data.sent_to || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create notification', details: error.message }, 500)
+  }
+})
+
+// Mark notification as read
+app.put('/api/notifications/:id/read', async (c) => {
+  try {
+    const id = c.req.param('id')
+    
+    await c.env.DB.prepare(`
+      UPDATE notifications 
+      SET status = 'read', read_at = datetime('now')
+      WHERE id = ?
+    `).bind(id).run()
+    
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to mark notification as read', details: error.message }, 500)
+  }
+})
+
+// Mark all notifications as read
+app.put('/api/notifications/read-all', async (c) => {
+  try {
+    await c.env.DB.prepare(`
+      UPDATE notifications 
+      SET status = 'read', read_at = datetime('now')
+      WHERE status = 'unread'
+    `).run()
+    
+    return c.json({ success: true })
+  } catch (error) {
+    return c.json({ error: 'Failed to mark all notifications as read', details: error.message }, 500)
+  }
+})
+
+// Delete notification
+app.delete('/api/notifications/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM notifications WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete notification', details: error.message }, 500)
+  }
+})
+
+// Get alert settings
+app.get('/api/alerts/settings', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM alert_settings WHERE is_active = 1
+      ORDER BY created_at DESC
+    `).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch alert settings', details: error.message }, 500)
+  }
+})
+
+// Create alert setting
+app.post('/api/alerts/settings', async (c) => {
+  try {
+    const data = await c.req.json()
+    
+    // Build condition JSON
+    const conditionJson = JSON.stringify({
+      field: data.condition_field,
+      operator: data.condition_operator,
+      value: data.condition_value
+    })
+    
+    const result = await c.env.DB.prepare(`
+      INSERT INTO alert_settings (name, alert_type, condition_json,
+                                    notification_channels, recipients, is_active)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.name || data.alert_name,
+      data.alert_type,
+      conditionJson,
+      data.notification_channels ? JSON.stringify(data.notification_channels) : null,
+      data.recipients ? JSON.stringify(data.recipients) : null,
+      data.is_active !== undefined ? data.is_active : 1
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create alert setting', details: error.message }, 500)
+  }
+})
+
+// Update alert setting
+app.put('/api/alerts/settings/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    // Build condition JSON if fields provided
+    let conditionJson = data.condition_json
+    if (data.condition_field && data.condition_operator && data.condition_value) {
+      conditionJson = JSON.stringify({
+        field: data.condition_field,
+        operator: data.condition_operator,
+        value: data.condition_value
+      })
+    }
+    
+    await c.env.DB.prepare(`
+      UPDATE alert_settings 
+      SET name = ?, condition_json = ?, notification_channels = ?,
+          recipients = ?, is_active = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.name || data.alert_name,
+      conditionJson,
+      data.notification_channels ? JSON.stringify(data.notification_channels) : null,
+      data.recipients ? JSON.stringify(data.recipients) : null,
+      data.is_active,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update alert setting', details: error.message }, 500)
+  }
+})
+
+// Delete alert setting
+app.delete('/api/alerts/settings/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM alert_settings WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete alert setting', details: error.message }, 500)
+  }
+})
+
+// ============================================
 // Analytics API
 // ============================================
 
-// Get analytics summary
+// Get comprehensive analytics summary
 app.get('/api/analytics', async (c) => {
   try {
     // Get equipment counts by status
@@ -565,6 +1864,54 @@ app.get('/api/analytics', async (c) => {
       FROM maintenance_plans
     `).first()
     
+    // Get checklist execution stats
+    const checklistStats = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN abnormal_items = 0 AND status = 'completed' THEN 1 ELSE 0 END) as passed,
+        SUM(CASE WHEN abnormal_items > 0 THEN 1 ELSE 0 END) as failed
+      FROM checklist_executions
+    `).first()
+    
+    // Get failure report stats
+    const failureStats = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open,
+        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved,
+        SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as critical_failures,
+        AVG(downtime_hours) as avg_downtime
+      FROM failure_reports
+    `).first()
+    
+    // Get work history costs (last 30 days)
+    const costStats = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as work_count,
+        SUM(labor_cost) as total_labor,
+        SUM(parts_cost) as total_parts,
+        SUM(total_cost) as total_cost
+      FROM work_history
+      WHERE start_time >= date('now', '-30 days')
+    `).first()
+    
+    // Get low stock parts count
+    const lowStockCount = await c.env.DB.prepare(`
+      SELECT COUNT(*) as count
+      FROM parts p
+      WHERE (
+        SELECT COALESCE(SUM(CASE 
+          WHEN transaction_type = 'in' THEN quantity
+          WHEN transaction_type = 'out' THEN -quantity
+          ELSE 0 END), 0)
+        FROM inventory_transactions 
+        WHERE part_id = p.id
+      ) <= p.min_stock_level
+    `).first()
+    
     // Calculate uptime percentage
     const uptime = equipmentStats.total > 0 
       ? ((equipmentStats.operational / equipmentStats.total) * 100).toFixed(1)
@@ -575,12 +1922,38 @@ app.get('/api/analytics', async (c) => {
       ? ((maintenanceStats.completed / maintenanceStats.total) * 100).toFixed(1)
       : 0
     
+    // Calculate checklist pass rate
+    const checklistPassRate = checklistStats.total > 0
+      ? ((checklistStats.passed / checklistStats.total) * 100).toFixed(1)
+      : 0
+    
+    // Calculate MTBF (Mean Time Between Failures) - in days
+    const mtbf = failureStats.total > 0 && equipmentStats.total > 0
+      ? (365 / (failureStats.total / equipmentStats.total)).toFixed(1)
+      : 0
+    
+    // Calculate MTTR (Mean Time To Repair) - in hours
+    const mttr = failureStats.avg_downtime 
+      ? failureStats.avg_downtime.toFixed(1)
+      : 0
+    
     return c.json({
       equipment: equipmentStats,
       workOrders: workOrderStats,
       maintenance: maintenanceStats,
-      uptime: parseFloat(uptime),
-      maintenanceCompliance: parseFloat(maintenanceCompliance),
+      checklists: checklistStats,
+      failures: failureStats,
+      costs: costStats,
+      inventory: {
+        low_stock_count: lowStockCount.count
+      },
+      kpis: {
+        uptime: parseFloat(uptime),
+        maintenanceCompliance: parseFloat(maintenanceCompliance),
+        checklistPassRate: parseFloat(checklistPassRate),
+        mtbf: parseFloat(mtbf),
+        mttr: parseFloat(mttr)
+      },
       timestamp: new Date().toISOString()
     })
   } catch (error) {
