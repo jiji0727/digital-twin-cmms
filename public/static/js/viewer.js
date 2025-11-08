@@ -134,25 +134,15 @@ async function initViewer() {
             }
             state.modelLoaded = true;
             
-            // Auto-focus on the model
-            const box = new THREE.Box3().setFromObject(mesh);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = state.camera.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / Math.tan(fov / 2)) * 1.5;
-            
-            state.camera.position.set(
-                center.x + cameraZ * 0.7, 
-                center.y + cameraZ * 0.5, 
-                center.z + cameraZ * 0.7
-            );
-            state.controls.target.copy(center);
+            // LCC models render themselves, just set a good camera position
+            // Set camera to a position that should show the model
+            state.camera.position.set(15, 10, 15);
+            state.controls.target.set(0, 0, 0);
             state.controls.update();
             
-            console.log('📐 Model bounds:', { center, size, maxDim });
+            console.log('📐 Camera positioned at:', state.camera.position);
             console.log('🎯 Model ready for interaction');
+            console.log('💡 Use mouse to orbit, scroll to zoom');
         }, 
         (percent) => {
             const progress = 40 + (percent * 50); // 40% to 90%
