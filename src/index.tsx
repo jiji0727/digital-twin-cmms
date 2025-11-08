@@ -2276,7 +2276,7 @@ app.get('/', (c) => {
                         </div>
                     </div>
                     
-                    <!-- Center: View Controls -->
+                    <!-- Right: View Controls & Display Settings -->
                     <div class="flex items-center space-x-2">
                         <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="resetView()">
                             <i class="fas fa-home mr-2"></i>ホーム視点
@@ -2284,16 +2284,8 @@ app.get('/', (c) => {
                         <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="takeScreenshot()">
                             <i class="fas fa-camera mr-2"></i>スクショ
                         </button>
-                    </div>
-
-                    <!-- Right: Stats & User -->
-                    <div class="flex items-center space-x-4">
-                        <div class="text-right">
-                            <div class="text-white text-sm font-semibold">稼働率</div>
-                            <div class="text-green-400 text-lg font-bold" id="uptime-display">--</div>
-                        </div>
-                        <button class="control-btn px-4 py-2 text-white rounded">
-                            <i class="fas fa-user-circle mr-2"></i>Admin
+                        <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="toggleDisplaySettings()">
+                            <i class="fas fa-cog mr-2"></i>表示設定
                         </button>
                     </div>
                 </div>
@@ -2586,8 +2578,8 @@ app.get('/', (c) => {
                 </div>
             </div>
 
-            <!-- Floating Display Settings Panel (Bottom Right) -->
-            <div class="fixed bottom-6 right-6 glass rounded-lg p-4 z-40" style="width: 240px;">
+            <!-- Floating Display Settings Panel (Top Right, below navbar) -->
+            <div id="display-settings-panel" class="fixed top-20 right-6 glass rounded-lg p-4 z-40" style="width: 280px; display: none; opacity: 0; transform: translateY(-10px); transition: all 0.3s ease;">
                 <h4 class="text-white text-sm font-semibold mb-3 flex items-center">
                     <i class="fas fa-sliders-h mr-2 text-blue-400"></i>
                     表示設定
@@ -2647,6 +2639,7 @@ app.get('/', (c) => {
         <script>
             // Panel state management
             let leftPanelTimer, rightPanelTimer;
+            let displaySettingsVisible = false;
             
             function openLeftPanel() {
                 clearTimeout(leftPanelTimer);
@@ -2668,6 +2661,25 @@ app.get('/', (c) => {
                 rightPanelTimer = setTimeout(() => {
                     document.getElementById('right-panel').classList.remove('open');
                 }, 300);
+            }
+            
+            // Toggle display settings panel
+            function toggleDisplaySettings() {
+                displaySettingsVisible = !displaySettingsVisible;
+                const panel = document.getElementById('display-settings-panel');
+                if (displaySettingsVisible) {
+                    panel.style.display = 'block';
+                    setTimeout(() => {
+                        panel.style.opacity = '1';
+                        panel.style.transform = 'translateY(0)';
+                    }, 10);
+                } else {
+                    panel.style.opacity = '0';
+                    panel.style.transform = 'translateY(-10px)';
+                    setTimeout(() => {
+                        panel.style.display = 'none';
+                    }, 300);
+                }
             }
             
             // Update HUD stats when analytics data loads
@@ -2731,6 +2743,7 @@ app.get('/', (c) => {
             // Make functions globally available
             window.switchTab = switchTab;
             window.filterFailures = filterFailures;
+            window.toggleDisplaySettings = toggleDisplaySettings;
         </script>
         
         <script type="importmap">
