@@ -845,9 +845,6 @@ app.get('/', (c) => {
                         <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="resetView()">
                             <i class="fas fa-home mr-2"></i>ホーム視点
                         </button>
-                        <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="showEquipmentEditDialog()">
-                            <i class="fas fa-plus mr-2"></i>設備追加
-                        </button>
                         <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="takeScreenshot()">
                             <i class="fas fa-camera mr-2"></i>スクショ
                         </button>
@@ -907,10 +904,17 @@ app.get('/', (c) => {
 
                     <!-- Equipment List -->
                     <div>
-                        <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
-                            <i class="fas fa-cogs mr-2 text-green-400"></i>
-                            設備一覧
-                        </h4>
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-white font-semibold flex items-center text-sm">
+                                <i class="fas fa-cogs mr-2 text-green-400"></i>
+                                設備一覧
+                            </h4>
+                            <button onclick="showEquipmentEditDialog()" 
+                                    class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                    title="設備を追加">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
                         <div class="space-y-2 max-h-64 overflow-y-auto" id="equipment-list">
                             <!-- Populated by JavaScript -->
                         </div>
@@ -1055,9 +1059,6 @@ app.get('/', (c) => {
             <div class="fixed bottom-6 left-6 flex flex-col space-y-3 z-40">
                 <button class="fab glass text-white" onclick="resetView()" title="ホーム視点に戻る">
                     <i class="fas fa-home text-xl"></i>
-                </button>
-                <button class="fab glass text-white" onclick="showEquipmentEditDialog()" title="設備を追加">
-                    <i class="fas fa-plus text-xl"></i>
                 </button>
                 <button class="fab glass text-white" onclick="takeScreenshot()" title="スクリーンショット">
                     <i class="fas fa-camera text-xl"></i>
