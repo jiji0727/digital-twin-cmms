@@ -2689,13 +2689,13 @@ app.get('/', (c) => {
                 document.querySelectorAll('.tab-btn').forEach(btn => {
                     btn.classList.remove('active');
                 });
-                document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+                document.querySelector('[data-tab="' + tabName + '"]').classList.add('active');
                 
                 // Update tab content
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.style.display = 'none';
                 });
-                document.getElementById(`tab-${tabName}`).style.display = 'block';
+                document.getElementById('tab-' + tabName).style.display = 'block';
                 
                 // Load data for the selected tab
                 switch(tabName) {
@@ -2720,7 +2720,7 @@ app.get('/', (c) => {
                 document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
                     btn.classList.remove('active');
                 });
-                document.querySelector(`[data-filter="${status}"]`).classList.add('active');
+                document.querySelector('[data-filter="' + status + '"]').classList.add('active');
                 
                 // Load filtered failures
                 if (window.loadFailures) {

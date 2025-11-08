@@ -648,3 +648,12 @@ window.showNotification = showNotification;
 window.showDialog = showDialog;
 
 console.log('✅ CMMS Feature Module loaded');
+
+// Initialize on page load - resources tab is active by default
+// Other tabs will load their data when switched
+window.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Initializing CMMS UI...');
+    
+    // Resources tab is already loaded by viewer.js
+    // Other tabs will auto-load when user switches to them via switchTab()
+});
