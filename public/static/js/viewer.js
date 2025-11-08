@@ -140,8 +140,11 @@ async function initViewer() {
             state.controls.target.set(0, 0, 0);
             state.controls.update();
             
+            // Debug: Log scene contents
             console.log('📐 Camera positioned at:', state.camera.position);
-            console.log('🎯 Model ready for interaction');
+            console.log('🎯 Scene children count:', state.scene.children.length);
+            console.log('🎯 Scene children types:', state.scene.children.map(c => c.type + (c.name ? ' (' + c.name + ')' : '')));
+            console.log('🎯 Model mesh:', mesh);
             console.log('💡 Use mouse to orbit, scroll to zoom');
         }, 
         (percent) => {
@@ -222,7 +225,7 @@ function onMouseMove(event) {
     if (state.isDragging && state.draggedMarker && state.modelLoaded) {
         state.raycaster.setFromCamera(state.mouse, state.camera);
         
-        // Raycast against all objects in the scene (excluding markers and helpers)
+        // Try raycasting against scene objects
         const intersectableObjects = state.scene.children.filter(obj => 
             obj.type !== 'GridHelper' && 
             obj.type !== 'AxesHelper' && 
@@ -235,8 +238,14 @@ function onMouseMove(event) {
         const intersects = state.raycaster.intersectObjects(intersectableObjects, true);
         
         if (intersects.length > 0) {
-            const point = intersects[0].point;
-            state.draggedMarker.position.copy(point);
+            // Found intersection
+            state.draggedMarker.position.copy(intersects[0].point);
+        } else {
+            // No intersection - move along a plane perpendicular to camera
+            const currentDistance = state.draggedMarker.position.distanceTo(state.camera.position);
+            const newPos = new THREE.Vector3();
+            newPos.copy(state.raycaster.ray.direction).multiplyScalar(currentDistance).add(state.raycaster.ray.origin);
+            state.draggedMarker.position.copy(newPos);
         }
     }
 }
@@ -331,7 +340,11 @@ function placeEquipmentAtClick() {
         return;
     }
     
-    // Raycast against all objects in the scene (excluding markers and helpers)
+    // Calculate 3D position from camera and mouse position
+    // Use raycaster to project from camera through mouse position
+    state.raycaster.setFromCamera(state.mouse, state.camera);
+    
+    // Try raycasting against scene objects first
     const intersectableObjects = state.scene.children.filter(obj => 
         obj.type !== 'GridHelper' && 
         obj.type !== 'AxesHelper' && 
@@ -341,26 +354,39 @@ function placeEquipmentAtClick() {
         obj.type !== 'HemisphereLight'
     );
     
+    let point = null;
     const intersects = state.raycaster.intersectObjects(intersectableObjects, true);
     
     if (intersects.length > 0) {
-        const point = intersects[0].point;
-        console.log('📍 Placing equipment at:', point);
-        console.log('🎯 Intersected object:', intersects[0].object);
-        
-        if (state.equipmentToPlace.id) {
-            // Update existing equipment position
-            updateEquipmentPosition(state.equipmentToPlace.id, point);
-        } else {
-            // Create new equipment at this position
-            state.equipmentToPlace.location_x = point.x;
-            state.equipmentToPlace.location_y = point.y;
-            state.equipmentToPlace.location_z = point.z;
-            createNewEquipment(state.equipmentToPlace);
-        }
-        
-        exitPlacementMode();
+        // Found intersection with scene objects
+        point = intersects[0].point.clone();
+        console.log('📍 Found intersection with object:', intersects[0].object.type);
     } else {
+        // No intersection - place at a fixed distance from camera along ray direction
+        const distance = state.camera.position.length() * 0.5; // Half distance to origin
+        point = new THREE.Vector3();
+        point.copy(state.raycaster.ray.direction).multiplyScalar(distance).add(state.raycaster.ray.origin);
+        console.log('📍 No intersection - placing at calculated position');
+    }
+    
+    console.log('📍 Placing equipment at:', point);
+    
+    if (state.equipmentToPlace.id) {
+        // Update existing equipment position
+        updateEquipmentPosition(state.equipmentToPlace.id, point);
+    } else {
+        // Create new equipment at this position
+        state.equipmentToPlace.location_x = point.x;
+        state.equipmentToPlace.location_y = point.y;
+        state.equipmentToPlace.location_z = point.z;
+        createNewEquipment(state.equipmentToPlace);
+    }
+    
+    exitPlacementMode();
+    return;
+    
+    // Fallback (should never reach here)
+    if (false) {
         showNotification('モデル表面をクリックしてください', 'warning');
     }
 }
