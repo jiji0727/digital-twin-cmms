@@ -215,26 +215,42 @@ function animate() {
             marker.quaternion.copy(state.camera.quaternion);
         }
         
-        // Calculate distance from camera
-        const distance = marker.position.distanceTo(state.camera.position);
-        const cameraTargetDistance = state.camera.position.distanceTo(state.controls.target);
+        // Occlusion check: Hide markers behind model
+        // Cast ray from camera to marker
+        const direction = new THREE.Vector3();
+        direction.subVectors(marker.position, state.camera.position).normalize();
         
-        // Fade markers based on distance
-        // Show markers closer to camera than the focus point
-        // Fade out markers that are much farther than focus point
-        if (distance < cameraTargetDistance * 1.2) {
-            // Marker is in front or near focus - show it
-            marker.material.opacity = 0.9;
-            marker.visible = true;
-        } else if (distance < cameraTargetDistance * 2.0) {
-            // Marker is behind focus but not too far - fade it
-            const fadeRange = cameraTargetDistance * 2.0 - cameraTargetDistance * 1.2;
-            const fadeAmount = (distance - cameraTargetDistance * 1.2) / fadeRange;
-            marker.material.opacity = 0.9 * (1 - fadeAmount);
-            marker.visible = true;
-        } else {
-            // Marker is too far behind focus - hide it
+        const raycaster = new THREE.Raycaster(state.camera.position, direction);
+        const distanceToMarker = marker.position.distanceTo(state.camera.position);
+        
+        // Get all scene objects except markers and helpers
+        const intersectableObjects = state.scene.children.filter(obj => 
+            obj.type !== 'GridHelper' && 
+            obj.type !== 'AxesHelper' && 
+            !state.markers.includes(obj) &&
+            obj.type !== 'AmbientLight' &&
+            obj.type !== 'DirectionalLight' &&
+            obj.type !== 'HemisphereLight'
+        );
+        
+        const intersects = raycaster.intersectObjects(intersectableObjects, true);
+        
+        // Check if something is blocking the view to the marker
+        let isOccluded = false;
+        for (const intersect of intersects) {
+            // If intersection is closer than marker, marker is occluded
+            if (intersect.distance < distanceToMarker - 0.5) { // 0.5 margin for tolerance
+                isOccluded = true;
+                break;
+            }
+        }
+        
+        // Set visibility based on occlusion
+        if (isOccluded) {
             marker.visible = false;
+        } else {
+            marker.visible = true;
+            marker.material.opacity = 0.9;
         }
     });
 
