@@ -232,8 +232,8 @@ app.put('/api/piping/:id', async (c) => {
       data.material,
       data.diameter,
       data.status,
-      data.pressure_rating,
-      data.temperature_rating,
+      data.pressure_rating || null,
+      data.temperature_rating || null,
       data.start_x,
       data.start_y,
       data.start_z,
@@ -241,10 +241,10 @@ app.put('/api/piping/:id', async (c) => {
       data.end_y,
       data.end_z,
       data.color,
-      data.description,
-      data.installation_date,
-      data.next_inspection,
-      data.connected_equipment_id,
+      data.description || null,
+      data.installation_date || null,
+      data.next_inspection || null,
+      data.connected_equipment_id || null,
       id
     ).run()
     

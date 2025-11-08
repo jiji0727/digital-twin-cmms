@@ -2012,7 +2012,11 @@ window.savePiping = async function(pipingId = null) {
         status,
         color,
         pressure_rating,
-        description
+        temperature_rating: null, // Optional field
+        description,
+        installation_date: null, // Optional field
+        next_inspection: null, // Optional field
+        connected_equipment_id: null // Optional field
     };
     
     if (pipingId) {
