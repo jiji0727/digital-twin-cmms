@@ -1113,7 +1113,7 @@ window.submitPart = async function() {
     const unitCost = document.getElementById('part-unit-cost').value;
     
     if (!name || !partNumber || !category) {
-        showNotification('部品名、部品番号、カテゴリは必須です', 'error');
+        showToast('部品名、部品番号、カテゴリは必須です', 'error');
         return;
     }
     
@@ -1128,12 +1128,154 @@ window.submitPart = async function() {
             location: 'Main Warehouse'
         });
         
-        showNotification('部品を登録しました', 'success');
+        showToast('部品を登録しました', 'success');
         closeDialog();
-        loadParts();
+        if (window.loadParts) loadParts();
     } catch (error) {
         console.error('Error submitting part:', error);
-        showNotification('部品登録に失敗しました', 'error');
+        showToast('部品登録に失敗しました', 'error');
+    }
+};
+
+// View part details
+window.viewPartDetails = async function(id) {
+    try {
+        const response = await axios.get('/api/parts');
+        const part = response.data.find(p => p.id === id);
+        
+        if (!part) {
+            showToast('部品が見つかりません', 'error');
+            return;
+        }
+        
+        const stockStatus = part.current_stock <= part.min_stock_level ? 'low' : 'ok';
+        const stockColor = stockStatus === 'low' ? 'red' : 'green';
+        
+        const dialog = 
+            '<div class="glass rounded-lg p-6 max-w-lg mx-auto">' +
+            '<h3 class="text-white text-lg font-bold mb-4 flex items-center justify-between">' +
+            '<span><i class="fas fa-box mr-2 text-yellow-400"></i>' + escapeHtml(part.name) + '</span>' +
+            '<span class="px-2 py-1 rounded text-xs bg-' + stockColor + '-500/20 text-' + stockColor + '-400">' +
+            (stockStatus === 'low' ? '在庫不足' : '在庫充分') +
+            '</span>' +
+            '</h3>' +
+            '<div class="space-y-3">' +
+            '<div class="grid grid-cols-2 gap-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">部品番号</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(part.part_number) + '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">カテゴリ</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(part.category || '-') + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-3 gap-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">現在庫</label>' +
+            '<div class="text-white text-lg font-bold mt-1">' + (part.current_stock || 0) + '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">最小在庫</label>' +
+            '<div class="text-gray-400 text-sm mt-1">' + (part.min_stock_level || 0) + '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">単価</label>' +
+            '<div class="text-white text-sm mt-1">¥' + (part.unit_price || 0).toLocaleString() + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">保管場所</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(part.location || '-') + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="flex gap-2 mt-6">' +
+            '<button onclick="adjustStock(' + id + ', \'in\')" ' +
+            'class="flex-1 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition">' +
+            '<i class="fas fa-plus mr-2"></i>入庫' +
+            '</button>' +
+            '<button onclick="adjustStock(' + id + ', \'out\')" ' +
+            'class="flex-1 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition">' +
+            '<i class="fas fa-minus mr-2"></i>出庫' +
+            '</button>' +
+            '<button onclick="closeDialog()" ' +
+            'class="px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+            '閉じる' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error loading part details:', error);
+        showToast('部品詳細の読み込みに失敗しました', 'error');
+    }
+};
+
+// Adjust stock (in/out)
+window.adjustStock = function(partId, type) {
+    const title = type === 'in' ? '入庫' : '出庫';
+    const color = type === 'in' ? 'green' : 'red';
+    
+    const dialog = 
+        '<div class="glass rounded-lg p-6 max-w-md mx-auto">' +
+        '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+        '<i class="fas fa-' + (type === 'in' ? 'plus' : 'minus') + ' mr-2 text-' + color + '-400"></i>' +
+        title +
+        '</h3>' +
+        '<div class="space-y-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">数量</label>' +
+        '<input type="number" id="stock-quantity" min="1" value="1" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">備考</label>' +
+        '<textarea id="stock-notes" rows="2" placeholder="備考を入力" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm"></textarea>' +
+        '</div>' +
+        '</div>' +
+        '<div class="flex gap-2 mt-6">' +
+        '<button onclick="submitStockAdjustment(' + partId + ', \'' + type + '\')" ' +
+        'class="flex-1 px-4 py-2 bg-' + color + '-500/20 hover:bg-' + color + '-500/30 text-' + color + '-400 rounded-lg transition">' +
+        '<i class="fas fa-check mr-2"></i>確定' +
+        '</button>' +
+        '<button onclick="closeDialog(); viewPartDetails(' + partId + ')" ' +
+        'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+        'キャンセル' +
+        '</button>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+};
+
+// Submit stock adjustment
+window.submitStockAdjustment = async function(partId, type) {
+    try {
+        const quantity = parseInt(document.getElementById('stock-quantity').value);
+        const notes = document.getElementById('stock-notes').value;
+        
+        if (!quantity || quantity <= 0) {
+            showToast('数量を入力してください', 'error');
+            return;
+        }
+        
+        await axios.post('/api/inventory/transactions', {
+            part_id: partId,
+            transaction_type: type,
+            quantity: quantity,
+            notes: notes || null,
+            transaction_date: new Date().toISOString().split('T')[0]
+        });
+        
+        showToast(type === 'in' ? '入庫しました' : '出庫しました', 'success');
+        closeDialog();
+        
+        if (window.loadParts) loadParts();
+    } catch (error) {
+        console.error('Error adjusting stock:', error);
+        showToast('在庫調整に失敗しました', 'error');
     }
 };
 
