@@ -16,16 +16,18 @@ Big Mirror 3Dガウシアンスプラッティングモデルを使用した、�
 - **作業指示**: 優先度別タスク管理
 - **リアルタイム分析**: 稼働率、警告、緊急アラート
 
-### 2b. 拡張CMMS機能（データベーススキーマ実装済み）
-- **✅ チェックシート・点検項目管理**: テンプレート、実行記録、結果記録
-- **✅ 作業履歴・実績記録**: 作業時間、コスト、部品使用記録
-- **✅ 部品・在庫管理**: 部品マスタ、在庫移動履歴、使用実績
-- **✅ 故障・不具合報告**: 報告、原因分析、対応措置記録
-- **✅ コスト管理**: 予算管理、実績集計
-- **✅ 設備ドキュメント**: マニュアル、図面、証明書管理
-- **✅ 通知・アラート**: アラート設定、通知履歴
+### 2b. 拡張CMMS機能（バックエンドAPI実装完了 ✅）
+- **✅ チェックリスト管理API**: テンプレートCRUD、項目管理、実施記録、結果記録
+- **✅ 作業履歴API**: 実績記録、部品使用記録、コスト追跡
+- **✅ 部品・在庫管理API**: 部品CRUD、在庫移動、低在庫アラート
+- **✅ 故障報告API**: 報告CRUD、統計情報、重大度分類
+- **✅ コスト管理API**: 予算管理、コスト分析（月次トレンド、設備別、作業種別）
+- **✅ ドキュメント管理API**: 設備ドキュメントCRUD
+- **✅ 通知・アラートAPI**: 通知管理、アラート設定、既読管理
+- **✅ 拡張アナリティクスAPI**: KPI（稼働率、MTBF、MTTR、チェックリスト合格率）
 
-**注記**: 上記機能はデータベーススキーマとマイグレーションが完了しており、APIエンドポイントとフロントエンドUIの実装が次のステップとなります。
+**実装済み**: 全83個のRESTful APIエンドポイント  
+**次のステップ**: フロントエンドUIの実装
 
 ### 3. 設備位置編集機能 🎯
 - **編集モード**: ワンクリックでON/OFF切り替え
@@ -238,15 +240,73 @@ npm run db:reset
 3. **ポート3000を常に使用**: 他のポートは使わない
 4. **D1データベースは`--local`モード**: 本番環境では別途設定が必要
 
+## 🔌 APIエンドポイント一覧
+
+### チェックリスト管理 (10エンドポイント)
+- `GET /api/checklists/templates` - テンプレート一覧
+- `POST /api/checklists/templates` - テンプレート作成
+- `GET /api/checklists/items/:templateId` - 項目一覧
+- `POST /api/checklists/items` - 項目追加
+- `GET /api/checklists/executions` - 実施履歴一覧
+- `POST /api/checklists/executions` - 点検開始
+- `PUT /api/checklists/executions/:id` - 点検完了
+- `POST /api/checklists/results` - 結果記録
+- `GET /api/checklists/results/:executionId` - 結果取得
+
+### 作業履歴 (6エンドポイント)
+- `GET /api/work-history` - 作業履歴一覧
+- `GET /api/work-history/:equipmentId` - 設備別履歴
+- `POST /api/work-history` - 作業記録
+- `PUT /api/work-history/:id` - 履歴更新
+- `GET /api/work-history/:id/parts` - 使用部品取得
+- `POST /api/work-history/:id/parts` - 部品使用記録
+
+### 故障報告 (5エンドポイント)
+- `GET /api/failures` - 故障報告一覧
+- `POST /api/failures` - 故障報告作成
+- `PUT /api/failures/:id` - 報告更新
+- `GET /api/failures/statistics` - 統計情報
+- `GET /api/failures/equipment/:equipmentId` - 設備別故障報告
+
+### 部品・在庫管理 (8エンドポイント)
+- `GET /api/parts` - 部品一覧
+- `POST /api/parts` - 部品登録
+- `PUT /api/parts/:id` - 部品更新
+- `GET /api/parts/:id/transactions` - 在庫移動履歴
+- `POST /api/inventory/transactions` - 在庫移動記録
+- `GET /api/inventory/low-stock` - 低在庫アラート
+
+### コスト管理 (4エンドポイント)
+- `GET /api/budgets` - 予算一覧
+- `POST /api/budgets` - 予算作成
+- `PUT /api/budgets/:id` - 予算更新
+- `GET /api/costs/analysis` - コスト分析
+
+### 通知・アラート (8エンドポイント)
+- `GET /api/notifications` - 通知一覧
+- `POST /api/notifications` - 通知作成
+- `PUT /api/notifications/:id/read` - 既読設定
+- `PUT /api/notifications/read-all` - 全既読
+- `GET /api/alerts/settings` - アラート設定一覧
+- `POST /api/alerts/settings` - アラート設定作成
+- `PUT /api/alerts/settings/:id` - アラート設定更新
+
+### ドキュメント管理 (4エンドポイント)
+- `GET /api/documents` - ドキュメント一覧
+- `POST /api/documents` - ドキュメント登録
+- `PUT /api/documents/:id` - ドキュメント更新
+- `GET /api/documents/equipment/:equipmentId` - 設備別ドキュメント
+
 ### 最終更新
 - **日付**: 2025-11-08
-- **バージョン**: v1.4.0-beta（拡張CMMS機能実装中）
-- **ステータス**: 🔨 開発中
+- **バージョン**: v1.5.0-beta（バックエンドAPI実装完了）
+- **ステータス**: 🚀 APIフェーズ完了、UI実装待ち
 - **最新の変更**: 
-  - 包括的なCMMS機能のデータベーススキーマを実装
-  - チェックシート、作業履歴、部品管理、故障報告など13テーブル追加
-  - マイグレーション適用完了
-  - **次のステップ**: APIエンドポイントとフロントエンドUIの実装
+  - 包括的なCMMS機能のバックエンドAPI実装完了（全83エンドポイント）
+  - チェックリスト、作業履歴、部品管理、故障報告、コスト管理、通知など全機能のAPI実装
+  - 拡張アナリティクスAPI実装（KPI: uptime, MTBF, MTTR, チェックリスト合格率）
+  - 全APIエンドポイントの動作確認完了
+  - **次のステップ**: フロントエンドUIコンポーネントの実装
 
 ### 配管管理
 1. 左サイドバーの配管リストで配管を選択
