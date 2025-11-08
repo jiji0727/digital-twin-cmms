@@ -2118,6 +2118,69 @@ app.get('/', (c) => {
                 border-color: #3b82f6;
             }
             
+            /* Tab Navigation */
+            .tab-btn {
+                flex: 1;
+                padding: 12px 8px;
+                background: transparent;
+                border: none;
+                border-bottom: 2px solid transparent;
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .tab-btn:hover {
+                color: rgba(255, 255, 255, 0.8);
+                background: rgba(255, 255, 255, 0.05);
+            }
+            .tab-btn.active {
+                color: #3b82f6;
+                border-bottom-color: #3b82f6;
+                background: rgba(59, 130, 246, 0.1);
+            }
+            .tab-btn i {
+                font-size: 16px;
+            }
+            .tab-label {
+                font-weight: 600;
+            }
+            
+            /* Tab Content */
+            .tab-content {
+                animation: fadeIn 0.3s ease-in-out;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            /* Filter Buttons */
+            .filter-btn {
+                padding: 4px 12px;
+                font-size: 11px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                color: rgba(255, 255, 255, 0.6);
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .filter-btn:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.9);
+            }
+            .filter-btn.active {
+                background: rgba(59, 130, 246, 0.3);
+                border-color: #3b82f6;
+                color: #3b82f6;
+            }
+            
             /* Status Colors */
             .status-operational { color: #10b981; }
             .status-warning { color: #f59e0b; }
@@ -2265,60 +2328,185 @@ app.get('/', (c) => {
             <!-- Left Trigger Zone (Hover to Open) -->
             <div class="trigger-zone left" onmouseenter="openLeftPanel()" onmouseleave="closeLeftPanel()"></div>
             
-            <!-- Left Side Panel - Equipment & Piping -->
+            <!-- Left Side Panel - CMMS Navigation -->
             <div id="left-panel" class="side-panel left glass" onmouseenter="openLeftPanel()" onmouseleave="closeLeftPanel()">
+                <!-- Tab Navigation -->
+                <div class="flex border-b border-gray-700">
+                    <button class="tab-btn active" data-tab="resources" onclick="switchTab('resources')">
+                        <i class="fas fa-cogs mr-1"></i>
+                        <span class="tab-label">リソース</span>
+                    </button>
+                    <button class="tab-btn" data-tab="checklists" onclick="switchTab('checklists')">
+                        <i class="fas fa-clipboard-check mr-1"></i>
+                        <span class="tab-label">点検</span>
+                    </button>
+                    <button class="tab-btn" data-tab="failures" onclick="switchTab('failures')">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                        <span class="tab-label">故障</span>
+                    </button>
+                    <button class="tab-btn" data-tab="work" onclick="switchTab('work')">
+                        <i class="fas fa-tools mr-1"></i>
+                        <span class="tab-label">作業</span>
+                    </button>
+                    <button class="tab-btn" data-tab="parts" onclick="switchTab('parts')">
+                        <i class="fas fa-box mr-1"></i>
+                        <span class="tab-label">部品</span>
+                    </button>
+                </div>
+
+                <!-- Tab Content -->
                 <div class="p-4 space-y-4">
-                    <div class="border-b border-gray-700 pb-3">
-                        <h3 class="text-white font-bold text-lg flex items-center">
-                            <i class="fas fa-list mr-2 text-blue-400"></i>
-                            リソース管理
-                        </h3>
+                    <!-- Resources Tab -->
+                    <div id="tab-resources" class="tab-content active">
+                        <div class="space-y-4">
+                            <!-- Equipment List -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-white font-semibold flex items-center text-sm">
+                                        <i class="fas fa-cogs mr-2 text-green-400"></i>
+                                        設備一覧
+                                    </h4>
+                                    <button onclick="showEquipmentEditDialog()" 
+                                            class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                            title="設備を追加">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                                <div class="space-y-2 max-h-64 overflow-y-auto" id="equipment-list">
+                                    <!-- Populated by JavaScript -->
+                                </div>
+                            </div>
+
+                            <!-- Piping List -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-white font-semibold flex items-center text-sm">
+                                        <i class="fas fa-grip-lines mr-2 text-cyan-400"></i>
+                                        配管一覧
+                                    </h4>
+                                    <button onclick="showPipingEditDialog()" 
+                                            class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                            title="配管を追加">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                                <div class="space-y-2 max-h-64 overflow-y-auto" id="piping-list">
+                                    <!-- Populated by JavaScript -->
+                                </div>
+                            </div>
+
+                            <!-- Maintenance Plans -->
+                            <div>
+                                <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
+                                    <i class="fas fa-wrench mr-2 text-orange-400"></i>
+                                    保守計画
+                                </h4>
+                                <div class="space-y-2 max-h-48 overflow-y-auto" id="maintenance-list">
+                                    <!-- Populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Equipment List -->
-                    <div>
-                        <div class="flex items-center justify-between mb-2">
-                            <h4 class="text-white font-semibold flex items-center text-sm">
-                                <i class="fas fa-cogs mr-2 text-green-400"></i>
-                                設備一覧
-                            </h4>
-                            <button onclick="showEquipmentEditDialog()" 
-                                    class="control-btn px-2 py-1 text-white text-xs rounded" 
-                                    title="設備を追加">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                        </div>
-                        <div class="space-y-2 max-h-64 overflow-y-auto" id="equipment-list">
-                            <!-- Populated by JavaScript -->
-                        </div>
-                    </div>
-
-                    <!-- Piping List -->
-                    <div>
-                        <div class="flex items-center justify-between mb-2">
-                            <h4 class="text-white font-semibold flex items-center text-sm">
-                                <i class="fas fa-grip-lines mr-2 text-cyan-400"></i>
-                                配管一覧
-                            </h4>
-                            <button onclick="showPipingEditDialog()" 
-                                    class="control-btn px-2 py-1 text-white text-xs rounded" 
-                                    title="配管を追加">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                        </div>
-                        <div class="space-y-2 max-h-64 overflow-y-auto" id="piping-list">
-                            <!-- Populated by JavaScript -->
+                    <!-- Checklists Tab -->
+                    <div id="tab-checklists" class="tab-content" style="display: none;">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-white font-semibold text-sm flex items-center">
+                                    <i class="fas fa-clipboard-check mr-2 text-blue-400"></i>
+                                    チェックリスト
+                                </h4>
+                                <button onclick="showChecklistTemplateDialog()" 
+                                        class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                        title="テンプレートを作成">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <div class="space-y-2 max-h-96 overflow-y-auto" id="checklist-templates-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Maintenance Plans -->
-                    <div>
-                        <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
-                            <i class="fas fa-wrench mr-2 text-orange-400"></i>
-                            保守計画
-                        </h4>
-                        <div class="space-y-2 max-h-48 overflow-y-auto" id="maintenance-list">
-                            <!-- Populated by JavaScript -->
+                    <!-- Failures Tab -->
+                    <div id="tab-failures" class="tab-content" style="display: none;">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-white font-semibold text-sm flex items-center">
+                                    <i class="fas fa-exclamation-triangle mr-2 text-red-400"></i>
+                                    故障報告
+                                </h4>
+                                <button onclick="showFailureReportDialog()" 
+                                        class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                        title="故障を報告">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <!-- Filter Buttons -->
+                            <div class="flex gap-2 flex-wrap">
+                                <button class="filter-btn active" data-filter="all" onclick="filterFailures('all')">
+                                    全て
+                                </button>
+                                <button class="filter-btn" data-filter="reported" onclick="filterFailures('reported')">
+                                    報告済
+                                </button>
+                                <button class="filter-btn" data-filter="in_repair" onclick="filterFailures('in_repair')">
+                                    修理中
+                                </button>
+                                <button class="filter-btn" data-filter="resolved" onclick="filterFailures('resolved')">
+                                    解決済
+                                </button>
+                            </div>
+                            <div class="space-y-2 max-h-80 overflow-y-auto" id="failures-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Work History Tab -->
+                    <div id="tab-work" class="tab-content" style="display: none;">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-white font-semibold text-sm flex items-center">
+                                    <i class="fas fa-tools mr-2 text-purple-400"></i>
+                                    作業履歴
+                                </h4>
+                                <button onclick="showWorkHistoryDialog()" 
+                                        class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                        title="作業を記録">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <div class="space-y-2 max-h-96 overflow-y-auto" id="work-history-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Parts Tab -->
+                    <div id="tab-parts" class="tab-content" style="display: none;">
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h4 class="text-white font-semibold text-sm flex items-center">
+                                    <i class="fas fa-box mr-2 text-yellow-400"></i>
+                                    部品・在庫
+                                </h4>
+                                <button onclick="showPartDialog()" 
+                                        class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                        title="部品を登録">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                            <!-- Low Stock Alert -->
+                            <div id="low-stock-alert" class="hidden bg-red-500/20 border border-red-500 rounded-lg p-2">
+                                <div class="flex items-center text-red-400 text-xs">
+                                    <i class="fas fa-exclamation-circle mr-2"></i>
+                                    <span id="low-stock-count">0</span>件の低在庫アラート
+                                </div>
+                            </div>
+                            <div class="space-y-2 max-h-80 overflow-y-auto" id="parts-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2494,6 +2682,55 @@ app.get('/', (c) => {
             
             // Make updateHUDStats available globally
             window.updateHUDStats = updateHUDStats;
+            
+            // Tab switching function
+            function switchTab(tabName) {
+                // Update tab buttons
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+                
+                // Update tab content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+                document.getElementById(`tab-${tabName}`).style.display = 'block';
+                
+                // Load data for the selected tab
+                switch(tabName) {
+                    case 'checklists':
+                        if (window.loadChecklistTemplates) window.loadChecklistTemplates();
+                        break;
+                    case 'failures':
+                        if (window.loadFailures) window.loadFailures();
+                        break;
+                    case 'work':
+                        if (window.loadWorkHistory) window.loadWorkHistory();
+                        break;
+                    case 'parts':
+                        if (window.loadParts) window.loadParts();
+                        break;
+                }
+            }
+            
+            // Filter functions
+            function filterFailures(status) {
+                // Update filter button states
+                document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelector(`[data-filter="${status}"]`).classList.add('active');
+                
+                // Load filtered failures
+                if (window.loadFailures) {
+                    window.loadFailures(status === 'all' ? null : status);
+                }
+            }
+            
+            // Make functions globally available
+            window.switchTab = switchTab;
+            window.filterFailures = filterFailures;
         </script>
         
         <script type="importmap">
@@ -2505,6 +2742,7 @@ app.get('/', (c) => {
         }
         </script>
         <script src="/static/js/viewer.js" type="module"></script>
+        <script src="/static/js/cmms.js"></script>
     </body>
     </html>
   `)
