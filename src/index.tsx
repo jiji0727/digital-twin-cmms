@@ -1382,18 +1382,10 @@ app.post('/api/inventory/transactions', async (c) => {
 app.get('/api/inventory/low-stock', async (c) => {
   try {
     const { results } = await c.env.DB.prepare(`
-      SELECT p.*,
-             COALESCE(
-               (SELECT SUM(CASE 
-                 WHEN transaction_type = 'in' THEN quantity
-                 WHEN transaction_type = 'out' THEN -quantity
-                 ELSE 0 END)
-                FROM inventory_transactions 
-                WHERE part_id = p.id), 0
-             ) as calculated_stock
+      SELECT p.*
       FROM parts p
-      HAVING calculated_stock <= p.min_stock_level
-      ORDER BY calculated_stock ASC
+      WHERE p.current_stock <= p.min_stock_level
+      ORDER BY p.current_stock ASC
     `).all()
     
     return c.json(results)
@@ -2240,6 +2232,15 @@ app.get('/', (c) => {
                 padding: 12px 20px;
                 text-align: center;
             }
+            
+            /* Dialog Overlay */
+            #dialog-container {
+                animation: fadeIn 0.2s ease-out;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
         </style>
         <script>
             // Register Service Worker for data.bin reconstruction
@@ -2630,6 +2631,10 @@ app.get('/', (c) => {
                     </button>
                 </div>
                 <div id="selection-content"></div>
+            </div>
+
+            <!-- Dialog Container for Modals -->
+            <div id="dialog-container" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display: none;" onclick="if(event.target === this) closeDialog()">
             </div>
         </div>
 

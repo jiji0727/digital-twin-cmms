@@ -643,6 +643,329 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
+// ============================================
+// Missing Functions Implementation
+// ============================================
+
+// View checklist template details
+window.viewChecklistTemplate = async function(templateId) {
+    try {
+        const response = await axios.get('/api/checklists/templates');
+        const template = response.data.find(t => t.id === templateId);
+        
+        if (!template) {
+            showNotification('テンプレートが見つかりません', 'error');
+            return;
+        }
+        
+        // Get items for this template
+        const itemsResponse = await axios.get('/api/checklists/items/' + templateId);
+        const items = itemsResponse.data;
+        
+        const itemsList = items.length > 0 ? items.map(item => 
+            '<li class="text-gray-300 text-sm">' + item.item_text + '</li>'
+        ).join('') : '<li class="text-gray-400 text-sm">項目がありません</li>';
+        
+        const dialog = '<div class="glass rounded-lg p-6 max-w-2xl mx-auto">' +
+            '<h3 class="text-white font-bold text-lg mb-4">' +
+            '<i class="fas fa-clipboard-check mr-2 text-blue-400"></i>' +
+            template.name +
+            '</h3>' +
+            '<div class="space-y-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">説明</label>' +
+            '<p class="text-white text-sm">' + (template.description || '説明なし') + '</p>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-4">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">頻度</label>' +
+            '<p class="text-white text-sm">' + template.frequency + '</p>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">設備タイプ</label>' +
+            '<p class="text-white text-sm">' + (template.equipment_type || '全設備') + '</p>' +
+            '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs mb-2 block">チェック項目</label>' +
+            '<ul class="space-y-1 max-h-64 overflow-y-auto">' + itemsList + '</ul>' +
+            '</div>' +
+            '<div class="flex gap-2">' +
+            '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+            '閉じる' +
+            '</button>' +
+            '<button onclick="startChecklistExecution(' + templateId + ')" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition">' +
+            '<i class="fas fa-play mr-2"></i>実施' +
+            '</button>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error viewing template:', error);
+        showNotification('テンプレート情報の取得に失敗しました', 'error');
+    }
+};
+
+// Show checklist template creation dialog
+window.showChecklistTemplateDialog = function() {
+    const dialog = '<div class="glass rounded-lg p-6 max-w-md mx-auto">' +
+        '<h3 class="text-white font-bold text-lg mb-4">' +
+        '<i class="fas fa-clipboard-check mr-2 text-blue-400"></i>' +
+        'チェックリストテンプレート作成' +
+        '</h3>' +
+        '<div class="space-y-4">' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">テンプレート名</label>' +
+        '<input type="text" id="template-name" placeholder="日次点検チェックリスト" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">説明</label>' +
+        '<textarea id="template-description" placeholder="毎日実施する基本点検" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600" rows="3"></textarea>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">頻度</label>' +
+        '<select id="template-frequency" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '<option value="daily">日次</option>' +
+        '<option value="weekly">週次</option>' +
+        '<option value="monthly">月次</option>' +
+        '<option value="quarterly">四半期</option>' +
+        '<option value="yearly">年次</option>' +
+        '</select>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">設備タイプ（任意）</label>' +
+        '<input type="text" id="template-equipment-type" placeholder="ポンプ、タンクなど" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div class="flex gap-2">' +
+        '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+        'キャンセル' +
+        '</button>' +
+        '<button onclick="createChecklistTemplate()" class="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition">' +
+        '作成' +
+        '</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+};
+
+// Create checklist template
+window.createChecklistTemplate = async function() {
+    const name = document.getElementById('template-name').value;
+    const description = document.getElementById('template-description').value;
+    const frequency = document.getElementById('template-frequency').value;
+    const equipmentType = document.getElementById('template-equipment-type').value;
+    
+    if (!name || !frequency) {
+        showNotification('テンプレート名と頻度は必須です', 'error');
+        return;
+    }
+    
+    try {
+        await axios.post('/api/checklists/templates', {
+            name,
+            description,
+            frequency,
+            equipment_type: equipmentType || null
+        });
+        
+        showNotification('テンプレートを作成しました', 'success');
+        closeDialog();
+        loadChecklistTemplates();
+    } catch (error) {
+        console.error('Error creating template:', error);
+        showNotification('テンプレート作成に失敗しました', 'error');
+    }
+};
+
+// Show work history creation dialog
+window.showWorkHistoryDialog = async function() {
+    try {
+        const equipmentResponse = await axios.get('/api/equipment');
+        const equipment = equipmentResponse.data;
+        
+        const equipmentOptions = equipment.map(eq => 
+            '<option value="' + eq.id + '">' + eq.name + ' (' + eq.type + ')</option>'
+        ).join('');
+        
+        const dialog = '<div class="glass rounded-lg p-6 max-w-md mx-auto">' +
+            '<h3 class="text-white font-bold text-lg mb-4">' +
+            '<i class="fas fa-tools mr-2 text-purple-400"></i>' +
+            '作業記録' +
+            '</h3>' +
+            '<div class="space-y-4">' +
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">対象設備</label>' +
+            '<select id="work-equipment" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            equipmentOptions +
+            '</select>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">作業タイプ</label>' +
+            '<select id="work-type" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            '<option value="inspection">点検</option>' +
+            '<option value="repair">修理</option>' +
+            '<option value="maintenance">メンテナンス</option>' +
+            '<option value="replacement">部品交換</option>' +
+            '<option value="cleaning">清掃</option>' +
+            '</select>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">作業内容</label>' +
+            '<textarea id="work-description" placeholder="実施した作業の詳細" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600" rows="3"></textarea>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">作業者名</label>' +
+            '<input type="text" id="work-performer" placeholder="作業者名" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-300 text-sm mb-2 block">作業時間（分）</label>' +
+            '<input type="number" id="work-duration" placeholder="60" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+            '</div>' +
+            '<div class="flex gap-2">' +
+            '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+            'キャンセル' +
+            '</button>' +
+            '<button onclick="submitWorkHistory()" class="flex-1 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded transition">' +
+            '記録' +
+            '</button>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error showing work history dialog:', error);
+        showNotification('ダイアログの表示に失敗しました', 'error');
+    }
+};
+
+// Submit work history
+window.submitWorkHistory = async function() {
+    const equipmentId = document.getElementById('work-equipment').value;
+    const workType = document.getElementById('work-type').value;
+    const description = document.getElementById('work-description').value;
+    const performerName = document.getElementById('work-performer').value;
+    const duration = document.getElementById('work-duration').value;
+    
+    if (!equipmentId || !workType || !description || !performerName) {
+        showNotification('すべての必須項目を入力してください', 'error');
+        return;
+    }
+    
+    try {
+        await axios.post('/api/work-history', {
+            equipment_id: parseInt(equipmentId),
+            work_type: workType,
+            description,
+            performer_name: performerName,
+            duration_minutes: duration ? parseInt(duration) : null,
+            work_date: new Date().toISOString().split('T')[0],
+            status: 'completed'
+        });
+        
+        showNotification('作業を記録しました', 'success');
+        closeDialog();
+        loadWorkHistory();
+    } catch (error) {
+        console.error('Error submitting work history:', error);
+        showNotification('作業記録に失敗しました', 'error');
+    }
+};
+
+// Show part creation dialog
+window.showPartDialog = function() {
+    const dialog = '<div class="glass rounded-lg p-6 max-w-md mx-auto">' +
+        '<h3 class="text-white font-bold text-lg mb-4">' +
+        '<i class="fas fa-box mr-2 text-yellow-400"></i>' +
+        '部品登録' +
+        '</h3>' +
+        '<div class="space-y-4">' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">部品名</label>' +
+        '<input type="text" id="part-name" placeholder="オイルフィルター" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">部品番号</label>' +
+        '<input type="text" id="part-number" placeholder="OF-12345" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">カテゴリ</label>' +
+        '<select id="part-category" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '<option value="filter">フィルター</option>' +
+        '<option value="bearing">ベアリング</option>' +
+        '<option value="seal">シール</option>' +
+        '<option value="belt">ベルト</option>' +
+        '<option value="valve">バルブ</option>' +
+        '<option value="sensor">センサー</option>' +
+        '<option value="other">その他</option>' +
+        '</select>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-4">' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">現在庫数</label>' +
+        '<input type="number" id="part-quantity" value="0" min="0" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">最小在庫</label>' +
+        '<input type="number" id="part-min-quantity" value="1" min="0" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-300 text-sm mb-2 block">単価（円）</label>' +
+        '<input type="number" id="part-unit-cost" placeholder="5000" min="0" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600">' +
+        '</div>' +
+        '<div class="flex gap-2">' +
+        '<button onclick="closeDialog()" class="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded transition">' +
+        'キャンセル' +
+        '</button>' +
+        '<button onclick="submitPart()" class="flex-1 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded transition">' +
+        '登録' +
+        '</button>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+};
+
+// Submit part
+window.submitPart = async function() {
+    const name = document.getElementById('part-name').value;
+    const partNumber = document.getElementById('part-number').value;
+    const category = document.getElementById('part-category').value;
+    const quantity = document.getElementById('part-quantity').value;
+    const minQuantity = document.getElementById('part-min-quantity').value;
+    const unitCost = document.getElementById('part-unit-cost').value;
+    
+    if (!name || !partNumber || !category) {
+        showNotification('部品名、部品番号、カテゴリは必須です', 'error');
+        return;
+    }
+    
+    try {
+        await axios.post('/api/parts', {
+            name,
+            part_number: partNumber,
+            category,
+            current_stock: parseInt(quantity) || 0,
+            min_stock_level: parseInt(minQuantity) || 1,
+            unit_price: unitCost ? parseFloat(unitCost) : null,
+            location: 'Main Warehouse'
+        });
+        
+        showNotification('部品を登録しました', 'success');
+        closeDialog();
+        loadParts();
+    } catch (error) {
+        console.error('Error submitting part:', error);
+        showNotification('部品登録に失敗しました', 'error');
+    }
+};
+
 // Export functions
 window.showNotification = showNotification;
 window.showDialog = showDialog;
