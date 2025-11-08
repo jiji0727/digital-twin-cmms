@@ -1,8 +1,8 @@
-// Service Worker for reconstructing split data.bin file
+// Service Worker for reconstructing split data.bin file from R2
 const CACHE_NAME = 'digital-twin-cmms-v1';
 const DATA_BIN_PARTS = [
-    '/models/BigMirror/data.bin.part-aa',
-    '/models/BigMirror/data.bin.part-ab'
+    '/r2-models/BigMirror/data.bin.part-aa',
+    '/r2-models/BigMirror/data.bin.part-ab'
 ];
 
 self.addEventListener('install', (event) => {
@@ -19,8 +19,8 @@ self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
     
     // Intercept data.bin requests
-    if (url.pathname.endsWith('/models/BigMirror/data.bin')) {
-        console.log('[SW] Intercepting data.bin request, reconstructing from parts...');
+    if (url.pathname.endsWith('/r2-models/BigMirror/data.bin')) {
+        console.log('[SW] Intercepting data.bin request, reconstructing from R2 parts...');
         
         event.respondWith(
             (async () => {

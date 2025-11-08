@@ -114,7 +114,7 @@ async function initViewer() {
         state.lccObject = LCCRender.load({
             camera: state.camera,
             scene: state.scene,
-            dataPath: `${location.origin}/models/BigMirror/meta.lcc`,
+            dataPath: `${location.origin}/r2-models/BigMirror/meta.lcc`,
             renderLib: THREE,
             canvas: state.renderer.domElement,
             renderer: state.renderer,

@@ -4,6 +4,7 @@ import { serveStatic } from 'hono/cloudflare-workers'
 
 type Bindings = {
   DB: D1Database;
+  R2: R2Bucket;
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -11,10 +12,37 @@ const app = new Hono<{ Bindings: Bindings }>()
 // Enable CORS for API routes
 app.use('/api/*', cors())
 
+// Enable CORS for R2 models
+app.use('/r2-models/*', cors())
+
+// R2 Proxy - Serve 3D model files from R2
+app.get('/r2-models/*', async (c) => {
+  const path = c.req.path.replace('/r2-models/', '')
+  
+  try {
+    const object = await c.env.R2.get(path)
+    
+    if (!object) {
+      return c.notFound()
+    }
+    
+    const headers = new Headers()
+    object.writeHttpMetadata(headers)
+    headers.set('etag', object.httpEtag)
+    headers.set('cache-control', 'public, max-age=31536000')
+    
+    return new Response(object.body, {
+      headers,
+    })
+  } catch (error) {
+    console.error('R2 fetch error:', error)
+    return c.json({ error: 'Failed to fetch from R2' }, 500)
+  }
+})
+
 // Serve static files
 app.use('/static/*', serveStatic({ root: './public' }))
 app.use('/sdk/*', serveStatic({ root: './public' }))
-app.use('/models/*', serveStatic({ root: './public' }))
 
 // ============================================
 // Equipment Management API
