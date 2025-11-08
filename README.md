@@ -19,6 +19,10 @@
 
 **本番環境**: https://3000-i5u2eevek55qty7xcvdvo-d0b9e1e2.sandbox.novita.ai
 
+**💾 プロジェクトバックアップ**: https://page.gensparksite.com/project_backups/digital-twin-cmms-lcc-final.tar.gz
+
+**🎨 3Dモデル**: Big Mirror (XGrids 3D Gaussian Splatting - 999,758 splats, 31.9MB)
+
 ## 📋 実装済み機能
 
 ### ✅ 3Dビューワー機能（参照サイトを超える）
