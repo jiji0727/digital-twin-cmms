@@ -2286,6 +2286,11 @@ app.get('/', (c) => {
                     transform: translateY(0); 
                 }
             }
+            
+            /* Right Panel Tab Content */
+            .right-tab-content {
+                animation: fadeIn 0.3s ease-in-out;
+            }
         </style>
         <script>
             // Register Service Worker for data.bin reconstruction
@@ -2595,40 +2600,123 @@ app.get('/', (c) => {
             <!-- Right Trigger Zone (Hover to Open) -->
             <div class="trigger-zone right" onmouseenter="openRightPanel()" onmouseleave="closeRightPanel()"></div>
             
-            <!-- Right Side Panel - Work Orders & Alerts -->
+            <!-- Right Side Panel - Work Management & Notifications -->
             <div id="right-panel" class="side-panel right glass" onmouseenter="openRightPanel()" onmouseleave="closeRightPanel()">
                 <div class="p-4 space-y-4">
-                    <!-- Header -->
-                    <div class="border-b border-gray-700 pb-3 flex items-center justify-between">
-                        <h3 class="text-white font-bold text-lg flex items-center">
-                            <i class="fas fa-bell mr-2 text-blue-400"></i>
-                            通知センター
-                            <span id="notification-badge" class="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full" style="display: none;">0</span>
-                        </h3>
-                        <button onclick="markAllNotificationsRead()" class="text-xs text-blue-400 hover:text-blue-300 transition">
-                            <i class="fas fa-check-double mr-1"></i>全既読
-                        </button>
+                    <!-- Header with Tabs -->
+                    <div class="border-b border-gray-700 pb-2">
+                        <div class="flex gap-1">
+                            <button class="flex-1 py-2 px-3 text-xs rounded-t transition" id="right-tab-work" onclick="switchRightTab('work')" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; border-bottom: 2px solid #3b82f6;">
+                                <i class="fas fa-tasks mr-1"></i>作業
+                            </button>
+                            <button class="flex-1 py-2 px-3 text-xs rounded-t transition" id="right-tab-notifications" onclick="switchRightTab('notifications')" style="background: transparent; color: rgba(255,255,255,0.5);">
+                                <i class="fas fa-bell mr-1"></i>通知
+                                <span id="notification-badge" class="ml-1 px-1.5 py-0.5 text-xs bg-red-500 text-white rounded-full" style="display: none;">0</span>
+                            </button>
+                            <button class="flex-1 py-2 px-3 text-xs rounded-t transition" id="right-tab-monitor" onclick="switchRightTab('monitor')" style="background: transparent; color: rgba(255,255,255,0.5);">
+                                <i class="fas fa-chart-area mr-1"></i>監視
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Filter Tabs -->
-                    <div class="flex gap-2 text-xs">
-                        <button class="filter-btn active" onclick="filterNotifications('all')" data-filter="all">
-                            <i class="fas fa-inbox mr-1"></i>すべて
-                        </button>
-                        <button class="filter-btn" onclick="filterNotifications('unread')" data-filter="unread">
-                            <i class="fas fa-circle mr-1"></i>未読
-                        </button>
-                        <button class="filter-btn" onclick="filterNotifications('important')" data-filter="important">
-                            <i class="fas fa-star mr-1"></i>重要
-                        </button>
+                    <!-- Work Orders Tab -->
+                    <div id="right-content-work" class="right-tab-content">
+                        <div>
+                            <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
+                                <i class="fas fa-clipboard-list mr-2 text-purple-400"></i>
+                                作業指示
+                            </h4>
+                            <div class="space-y-2 max-h-80 overflow-y-auto" id="workorder-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
+                                <i class="fas fa-bell mr-2 text-red-400"></i>
+                                アラート
+                            </h4>
+                            <div class="space-y-2 max-h-48 overflow-y-auto" id="alert-list">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Notifications List -->
-                    <div id="notification-list" class="space-y-2 max-h-[calc(100vh-250px)] overflow-y-auto">
-                        <!-- Populated by JavaScript -->
-                        <div class="text-center text-gray-500 text-sm py-8">
-                            <i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>
-                            <p>通知はありません</p>
+                    <!-- Notifications Tab -->
+                    <div id="right-content-notifications" class="right-tab-content" style="display: none;">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-white font-semibold text-sm">通知一覧</h4>
+                            <button onclick="markAllNotificationsRead()" class="text-xs text-blue-400 hover:text-blue-300 transition">
+                                <i class="fas fa-check-double mr-1"></i>全既読
+                            </button>
+                        </div>
+
+                        <!-- Filter Tabs -->
+                        <div class="flex gap-2 text-xs mb-3">
+                            <button class="filter-btn active" onclick="filterNotifications('all')" data-filter="all">
+                                <i class="fas fa-inbox mr-1"></i>すべて
+                            </button>
+                            <button class="filter-btn" onclick="filterNotifications('unread')" data-filter="unread">
+                                <i class="fas fa-circle mr-1"></i>未読
+                            </button>
+                            <button class="filter-btn" onclick="filterNotifications('important')" data-filter="important">
+                                <i class="fas fa-star mr-1"></i>重要
+                            </button>
+                        </div>
+
+                        <!-- Notifications List -->
+                        <div id="notification-list" class="space-y-2 max-h-[calc(100vh-350px)] overflow-y-auto">
+                            <!-- Populated by JavaScript -->
+                            <div class="text-center text-gray-500 text-sm py-8">
+                                <i class="fas fa-inbox text-3xl mb-2 opacity-50"></i>
+                                <p>通知はありません</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Monitoring Tab -->
+                    <div id="right-content-monitor" class="right-tab-content" style="display: none;">
+                        <h4 class="text-white font-semibold mb-3 flex items-center text-sm">
+                            <i class="fas fa-chart-area mr-2 text-blue-400"></i>
+                            リアルタイム監視
+                        </h4>
+                        <div class="space-y-3">
+                            <div>
+                                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                    <span>CPU使用率</span>
+                                    <span>67%</span>
+                                </div>
+                                <div class="w-full bg-gray-700 rounded-full h-2">
+                                    <div class="bg-blue-500 h-2 rounded-full" style="width: 67%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                    <span>メモリ使用率</span>
+                                    <span>54%</span>
+                                </div>
+                                <div class="w-full bg-gray-700 rounded-full h-2">
+                                    <div class="bg-green-500 h-2 rounded-full" style="width: 54%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                    <span>ネットワーク</span>
+                                    <span>23%</span>
+                                </div>
+                                <div class="w-full bg-gray-700 rounded-full h-2">
+                                    <div class="bg-purple-500 h-2 rounded-full" style="width: 23%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                    <span>ディスク使用率</span>
+                                    <span>42%</span>
+                                </div>
+                                <div class="w-full bg-gray-700 rounded-full h-2">
+                                    <div class="bg-yellow-500 h-2 rounded-full" style="width: 42%"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2715,8 +2803,9 @@ app.get('/', (c) => {
             function openRightPanel() {
                 clearTimeout(rightPanelTimer);
                 document.getElementById('right-panel').classList.add('open');
-                // Load notifications when panel opens
-                if (window.loadNotifications) {
+                // Load data when panel opens based on active tab
+                const activeTab = document.querySelector('[id^="right-tab-"][style*="border-bottom"]');
+                if (activeTab && activeTab.id === 'right-tab-notifications' && window.loadNotifications) {
                     window.loadNotifications();
                 }
             }
@@ -2725,6 +2814,31 @@ app.get('/', (c) => {
                 rightPanelTimer = setTimeout(() => {
                     document.getElementById('right-panel').classList.remove('open');
                 }, 300);
+            }
+            
+            // Switch right panel tabs
+            function switchRightTab(tabName) {
+                // Update tab buttons
+                ['work', 'notifications', 'monitor'].forEach(tab => {
+                    const btn = document.getElementById('right-tab-' + tab);
+                    const content = document.getElementById('right-content-' + tab);
+                    if (tab === tabName) {
+                        btn.style.background = 'rgba(59, 130, 246, 0.2)';
+                        btn.style.color = '#3b82f6';
+                        btn.style.borderBottom = '2px solid #3b82f6';
+                        content.style.display = 'block';
+                    } else {
+                        btn.style.background = 'transparent';
+                        btn.style.color = 'rgba(255,255,255,0.5)';
+                        btn.style.borderBottom = 'none';
+                        content.style.display = 'none';
+                    }
+                });
+                
+                // Load data for the active tab
+                if (tabName === 'notifications' && window.loadNotifications) {
+                    window.loadNotifications();
+                }
             }
             
             // Toggle display settings panel
