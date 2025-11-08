@@ -219,9 +219,20 @@ function onMouseMove(event) {
     state.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     
     // Handle marker dragging
-    if (state.isDragging && state.draggedMarker && state.modelLoaded && state.lccObject && state.lccObject.mesh) {
+    if (state.isDragging && state.draggedMarker && state.modelLoaded) {
         state.raycaster.setFromCamera(state.mouse, state.camera);
-        const intersects = state.raycaster.intersectObject(state.lccObject.mesh, true);
+        
+        // Raycast against all objects in the scene (excluding markers and helpers)
+        const intersectableObjects = state.scene.children.filter(obj => 
+            obj.type !== 'GridHelper' && 
+            obj.type !== 'AxesHelper' && 
+            !state.markers.includes(obj) &&
+            obj.type !== 'AmbientLight' &&
+            obj.type !== 'DirectionalLight' &&
+            obj.type !== 'HemisphereLight'
+        );
+        
+        const intersects = state.raycaster.intersectObjects(intersectableObjects, true);
         
         if (intersects.length > 0) {
             const point = intersects[0].point;
@@ -293,26 +304,49 @@ function onClick(event) {
     }
     
     // If edit mode and clicked on model surface
-    if (state.editMode && state.modelLoaded && state.lccObject && state.lccObject.mesh) {
-        const modelIntersects = state.raycaster.intersectObject(state.lccObject.mesh, true);
+    if (state.editMode && state.modelLoaded) {
+        // Raycast against all objects in the scene (excluding markers and helpers)
+        const intersectableObjects = state.scene.children.filter(obj => 
+            obj.type !== 'GridHelper' && 
+            obj.type !== 'AxesHelper' && 
+            !state.markers.includes(obj) &&
+            obj.type !== 'AmbientLight' &&
+            obj.type !== 'DirectionalLight' &&
+            obj.type !== 'HemisphereLight'
+        );
+        
+        const modelIntersects = state.raycaster.intersectObjects(intersectableObjects, true);
         if (modelIntersects.length > 0) {
             const point = modelIntersects[0].point;
             console.log('🎯 Clicked on model at:', point);
+            console.log('🎯 Intersected object:', modelIntersects[0].object);
             showPositionInfo(point);
         }
     }
 }
 
 function placeEquipmentAtClick() {
-    if (!state.modelLoaded || !state.lccObject || !state.lccObject.mesh) {
+    if (!state.modelLoaded) {
         showNotification('モデルの読み込みが完了していません。しばらくお待ちください...', 'warning');
         return;
     }
     
-    const intersects = state.raycaster.intersectObject(state.lccObject.mesh, true);
+    // Raycast against all objects in the scene (excluding markers and helpers)
+    const intersectableObjects = state.scene.children.filter(obj => 
+        obj.type !== 'GridHelper' && 
+        obj.type !== 'AxesHelper' && 
+        !state.markers.includes(obj) &&
+        obj.type !== 'AmbientLight' &&
+        obj.type !== 'DirectionalLight' &&
+        obj.type !== 'HemisphereLight'
+    );
+    
+    const intersects = state.raycaster.intersectObjects(intersectableObjects, true);
+    
     if (intersects.length > 0) {
         const point = intersects[0].point;
         console.log('📍 Placing equipment at:', point);
+        console.log('🎯 Intersected object:', intersects[0].object);
         
         if (state.equipmentToPlace.id) {
             // Update existing equipment position
