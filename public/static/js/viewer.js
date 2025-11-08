@@ -40,7 +40,8 @@ const state = {
     // Piping placement
     isPlacingPiping: false,
     pipingStartPoint: null,
-    pipingEndPoint: null
+    pipingEndPoint: null,
+    pipingToEdit: null  // Store piping being edited
 };
 
 // Initialize the 3D viewer with LCC SDK
@@ -657,7 +658,13 @@ function placePipingPointAtClick() {
         
         // Show piping dialog with positions set
         state.isPlacingPiping = false;
-        showPipingEditDialog();
+        
+        // If editing existing piping, show edit dialog with that piping
+        if (state.pipingToEdit) {
+            showPipingEditDialog(state.pipingToEdit.id);
+        } else {
+            showPipingEditDialog();
+        }
     }
 }
 
@@ -1991,28 +1998,52 @@ window.showPipingEditDialog = function(pipingId = null) {
     document.body.insertAdjacentHTML('beforeend', dialogHTML);
 }
 
-window.closePipingDialog = function() {
+window.closePipingDialog = function(keepPlacementMode = false) {
     const dialog = document.getElementById('piping-dialog');
     if (dialog) {
         dialog.remove();
     }
     
-    // Cancel any ongoing position selection
-    if (state.isPlacingPiping) {
+    // Cancel any ongoing position selection (unless explicitly keeping it)
+    if (!keepPlacementMode && state.isPlacingPiping) {
         state.isPlacingPiping = false;
         state.pipingStartPoint = null;
         state.pipingEndPoint = null;
+        state.pipingToEdit = null;
+        
+        // Remove temporary marker if exists
+        const tempMarker = state.scene.getObjectByName('tempPipingStartMarker');
+        if (tempMarker) {
+            state.scene.remove(tempMarker);
+            if (tempMarker.geometry) tempMarker.geometry.dispose();
+            if (tempMarker.material) tempMarker.material.dispose();
+        }
+        
         showNotification('配管作成をキャンセルしました', 'info');
     }
 }
 
-// Start piping position selection
+// Start piping position selection (for new piping)
 window.startPipingPositionSelection = function() {
     state.isPlacingPiping = true;
     state.pipingStartPoint = null;
     state.pipingEndPoint = null;
+    state.pipingToEdit = null;
     showNotification('配管の始点をクリックしてください', 'info');
-    closePipingDialog();
+    closePipingDialog(true); // Keep placement mode active
+}
+
+// Start piping repositioning (for existing piping)
+window.startPipingRepositioning = function(pipingId) {
+    const piping = state.piping.find(p => p.id === pipingId);
+    if (!piping) return;
+    
+    state.isPlacingPiping = true;
+    state.pipingStartPoint = null;
+    state.pipingEndPoint = null;
+    state.pipingToEdit = piping;
+    showNotification('配管の新しい始点をクリックしてください', 'info');
+    closePipingDialog(true); // Keep placement mode active
 }
 
 // Save piping
@@ -2046,12 +2077,22 @@ window.savePiping = async function(pipingId = null) {
         // Update existing piping
         const existingPiping = state.piping.find(p => p.id === pipingId);
         if (existingPiping) {
-            pipingData.start_x = existingPiping.start_x;
-            pipingData.start_y = existingPiping.start_y;
-            pipingData.start_z = existingPiping.start_z;
-            pipingData.end_x = existingPiping.end_x;
-            pipingData.end_y = existingPiping.end_y;
-            pipingData.end_z = existingPiping.end_z;
+            // Use new positions if they were set, otherwise keep existing
+            if (state.pipingStartPoint && state.pipingEndPoint) {
+                pipingData.start_x = state.pipingStartPoint.x;
+                pipingData.start_y = state.pipingStartPoint.y;
+                pipingData.start_z = state.pipingStartPoint.z;
+                pipingData.end_x = state.pipingEndPoint.x;
+                pipingData.end_y = state.pipingEndPoint.y;
+                pipingData.end_z = state.pipingEndPoint.z;
+            } else {
+                pipingData.start_x = existingPiping.start_x;
+                pipingData.start_y = existingPiping.start_y;
+                pipingData.start_z = existingPiping.start_z;
+                pipingData.end_x = existingPiping.end_x;
+                pipingData.end_y = existingPiping.end_y;
+                pipingData.end_z = existingPiping.end_z;
+            }
             
             try {
                 const response = await axios.put(`/api/piping/${pipingId}`, pipingData);
@@ -2063,6 +2104,11 @@ window.savePiping = async function(pipingId = null) {
                     clearPipingVisualization();
                     createPipingVisualization(state.piping);
                     renderPipingList(state.piping);
+                    
+                    // Reset piping placement state
+                    state.pipingStartPoint = null;
+                    state.pipingEndPoint = null;
+                    state.pipingToEdit = null;
                     
                     closePipingDialog();
                     showNotification('配管を更新しました', 'success');
@@ -2092,10 +2138,13 @@ window.savePiping = async function(pipingId = null) {
                     createPipingVisualization([newPiping]);
                     renderPipingList(state.piping);
                     
+                    // Reset piping placement state
                     state.isPlacingPiping = false;
                     state.pipingStartPoint = null;
                     state.pipingEndPoint = null;
+                    state.pipingToEdit = null;
                     
+                    closePipingDialog();
                     showNotification(`${newPiping.name}を作成しました`, 'success');
                 }
             } catch (error) {
