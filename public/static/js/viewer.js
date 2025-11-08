@@ -70,6 +70,17 @@ async function initViewer() {
     state.controls.maxPolarAngle = Math.PI / 1.8;
     state.controls.minDistance = 5;
     state.controls.maxDistance = 200;
+    
+    // Configure mouse buttons:
+    // RIGHT click (2) for rotate
+    // MIDDLE click (1) for zoom
+    // Left click (0) reserved for marker interaction
+    state.controls.mouseButtons = {
+        LEFT: null,  // Disable left click for orbit controls
+        MIDDLE: THREE.MOUSE.DOLLY,  // Middle click for zoom
+        RIGHT: THREE.MOUSE.ROTATE   // Right click for rotate
+    };
+    
     updateLoadingProgress(25);
 
     // Add lights
@@ -251,7 +262,8 @@ function onMouseMove(event) {
 }
 
 function onMouseDown(event) {
-    if (event.button !== 0) return; // Only left click
+    // Only handle left click for marker dragging
+    if (event.button !== 0) return;
     
     state.raycaster.setFromCamera(state.mouse, state.camera);
     const intersects = state.raycaster.intersectObjects(state.markers);
@@ -261,9 +273,9 @@ function onMouseDown(event) {
         state.draggedMarker = marker;
         state.isDragging = true;
         
-        if (state.controls) {
-            state.controls.enabled = false;
-        }
+        // Don't disable controls - allow camera movement with right/middle click
+        // Only prevent orbit controls from starting on THIS left click
+        event.stopPropagation();
         
         document.getElementById('viewer-canvas').style.cursor = 'grabbing';
     }
@@ -279,10 +291,7 @@ function onMouseUp(event) {
         state.isDragging = false;
         state.draggedMarker = null;
         
-        if (state.controls && !state.isPlacingEquipment) {
-            state.controls.enabled = !state.editMode;
-        }
-        
+        // Controls remain enabled for camera movement
         document.getElementById('viewer-canvas').style.cursor = state.editMode ? 'pointer' : 'default';
     }
 }

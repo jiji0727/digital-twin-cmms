@@ -638,6 +638,10 @@ app.get('/', (c) => {
                     <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="takeScreenshot()">
                         <i class="fas fa-camera mr-2"></i>スクショ
                     </button>
+                    <div class="text-gray-400 text-xs ml-4 flex items-center">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        <span>右クリック: 回転 | ホイール: ズーム | 左クリック: 選択・配置</span>
+                    </div>
                 </div>
 
                 <div class="flex items-center space-x-4">
