@@ -204,10 +204,38 @@ function animate() {
         LCCRender.update();
     }
 
-    // Animate equipment markers
+    // Update equipment markers
     const time = Date.now() * 0.001;
     state.markers.forEach(marker => {
+        // Animate scale with pulse effect
         marker.scale.setScalar(1 + Math.sin(time * 2 + marker.position.x) * 0.1);
+        
+        // Make marker face camera (billboard effect)
+        if (marker.userData.isBillboard) {
+            marker.quaternion.copy(state.camera.quaternion);
+        }
+        
+        // Calculate distance from camera
+        const distance = marker.position.distanceTo(state.camera.position);
+        const cameraTargetDistance = state.camera.position.distanceTo(state.controls.target);
+        
+        // Fade markers based on distance
+        // Show markers closer to camera than the focus point
+        // Fade out markers that are much farther than focus point
+        if (distance < cameraTargetDistance * 1.2) {
+            // Marker is in front or near focus - show it
+            marker.material.opacity = 0.9;
+            marker.visible = true;
+        } else if (distance < cameraTargetDistance * 2.0) {
+            // Marker is behind focus but not too far - fade it
+            const fadeRange = cameraTargetDistance * 2.0 - cameraTargetDistance * 1.2;
+            const fadeAmount = (distance - cameraTargetDistance * 1.2) / fadeRange;
+            marker.material.opacity = 0.9 * (1 - fadeAmount);
+            marker.visible = true;
+        } else {
+            // Marker is too far behind focus - hide it
+            marker.visible = false;
+        }
     });
 
     state.renderer.render(state.scene, state.camera);
@@ -571,15 +599,18 @@ function createEquipmentMarkers(equipment) {
     }
     
     equipment.forEach(eq => {
-        const geometry = new THREE.SphereGeometry(0.8, 16, 16);
+        // Smaller marker (0.4 instead of 0.8)
+        const geometry = new THREE.SphereGeometry(0.4, 16, 16);
         const material = new THREE.MeshStandardMaterial({
             color: eq.status === 'operational' ? 0x10b981 : 
                    eq.status === 'warning' ? 0xf59e0b : 0xef4444,
             emissive: eq.status === 'operational' ? 0x10b981 : 
                       eq.status === 'warning' ? 0xf59e0b : 0xef4444,
-            emissiveIntensity: 0.5,
+            emissiveIntensity: 0.8,
             transparent: true,
-            opacity: 0.9
+            opacity: 0.9,
+            depthTest: true,
+            depthWrite: true
         });
         
         const marker = new THREE.Mesh(geometry, material);
@@ -591,6 +622,9 @@ function createEquipmentMarkers(equipment) {
         marker.userData = { equipmentId: eq.id, equipment: eq };
         marker.name = `equipment-marker-${eq.id}`;
         marker.castShadow = true;
+        
+        // Make marker always face camera (billboard effect)
+        marker.userData.isBillboard = true;
         
         state.scene.add(marker);
         state.markers.push(marker);
