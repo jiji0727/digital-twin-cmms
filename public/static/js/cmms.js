@@ -1542,6 +1542,229 @@ window.submitInventoryMovement = async function(partId) {
     }
 };
 
+// ============================================
+// Dashboard Functions
+// ============================================
+
+// Load dashboard
+window.loadDashboard = async function() {
+    try {
+        // Get statistics
+        const [equipmentRes, failuresRes, workRes, analyticsRes] = await Promise.all([
+            axios.get('/api/equipment'),
+            axios.get('/api/failures'),
+            axios.get('/api/work-history'),
+            axios.get('/api/analytics')
+        ]);
+        
+        const equipment = equipmentRes.data;
+        const failures = failuresRes.data;
+        const workHistory = workRes.data;
+        const analytics = analyticsRes.data;
+        
+        // Update KPI cards
+        document.getElementById('dashboard-total-equipment').textContent = equipment.length;
+        document.getElementById('dashboard-uptime').textContent = (analytics.uptime || 0).toFixed(1) + '%';
+        document.getElementById('dashboard-failures').textContent = failures.filter(f => f.status !== 'resolved' && f.status !== 'closed').length;
+        document.getElementById('dashboard-work-completed').textContent = workHistory.filter(w => w.status === 'completed').length;
+        
+        // Show recent activity
+        const recentActivity = [];
+        
+        // Recent failures
+        failures.slice(0, 3).forEach(f => {
+            recentActivity.push({
+                type: 'failure',
+                icon: 'exclamation-triangle',
+                color: 'red',
+                title: f.title,
+                subtitle: f.equipment_name,
+                time: new Date(f.report_date || f.created_at)
+            });
+        });
+        
+        // Recent work
+        workHistory.slice(0, 3).forEach(w => {
+            recentActivity.push({
+                type: 'work',
+                icon: 'tools',
+                color: 'purple',
+                title: w.title || w.work_type,
+                subtitle: w.equipment_name,
+                time: new Date(w.start_time || w.created_at)
+            });
+        });
+        
+        // Sort by time
+        recentActivity.sort((a, b) => b.time - a.time);
+        
+        const container = document.getElementById('dashboard-recent-activity');
+        container.innerHTML = recentActivity.slice(0, 8).map(activity => 
+            '<div class="bg-gray-800/50 rounded-lg p-2">' +
+            '<div class="flex items-start gap-2">' +
+            '<i class="fas fa-' + activity.icon + ' text-' + activity.color + '-400 mt-1"></i>' +
+            '<div class="flex-1 min-w-0">' +
+            '<div class="text-white text-sm truncate">' + activity.title + '</div>' +
+            '<div class="text-gray-400 text-xs truncate">' + activity.subtitle + '</div>' +
+            '<div class="text-gray-500 text-xs">' + activity.time.toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</div>' +
+            '</div>' +
+            '</div>' +
+            '</div>'
+        ).join('');
+        
+    } catch (error) {
+        console.error('Error loading dashboard:', error);
+        showNotification('ダッシュボードの読み込みに失敗しました', 'error');
+    }
+};
+
+// ============================================
+// Equipment Integrated Info Panel
+// ============================================
+
+// Show integrated equipment info (called from viewer.js)
+window.showEquipmentIntegratedInfo = async function(equipment) {
+    try {
+        // Get related data in parallel
+        const [failuresRes, workRes, checklistsRes] = await Promise.all([
+            axios.get('/api/failures/equipment/' + equipment.id).catch(() => ({ data: [] })),
+            axios.get('/api/work-history/' + equipment.id).catch(() => ({ data: [] })),
+            axios.get('/api/checklists/executions').catch(() => ({ data: [] }))
+        ]);
+        
+        const failures = failuresRes.data;
+        const workHistory = workRes.data;
+        const allChecklists = checklistsRes.data;
+        const checklists = allChecklists.filter(c => c.equipment_id === equipment.id);
+        
+        const panel = document.getElementById('selection-panel');
+        const content = document.getElementById('selection-content');
+        
+        content.innerHTML = '<div class="space-y-3">' +
+            // Basic Info
+            '<div>' +
+            '<div class="text-gray-400 text-xs">設備名</div>' +
+            '<div class="text-white font-semibold">' + equipment.name + '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-2">' +
+            '<div>' +
+            '<div class="text-gray-400 text-xs">タイプ</div>' +
+            '<div class="text-white text-sm">' + equipment.type + '</div>' +
+            '</div>' +
+            '<div>' +
+            '<div class="text-gray-400 text-xs">ステータス</div>' +
+            '<div class="status-' + equipment.status + ' font-semibold capitalize text-sm">' + equipment.status + '</div>' +
+            '</div>' +
+            '</div>' +
+            
+            // Related Info Summary
+            '<div class="grid grid-cols-3 gap-2 pt-2 border-t border-gray-700">' +
+            '<div class="text-center">' +
+            '<div class="text-red-400 text-lg font-bold">' + failures.length + '</div>' +
+            '<div class="text-gray-400 text-xs">故障</div>' +
+            '</div>' +
+            '<div class="text-center">' +
+            '<div class="text-purple-400 text-lg font-bold">' + workHistory.length + '</div>' +
+            '<div class="text-gray-400 text-xs">作業</div>' +
+            '</div>' +
+            '<div class="text-center">' +
+            '<div class="text-blue-400 text-lg font-bold">' + checklists.length + '</div>' +
+            '<div class="text-gray-400 text-xs">点検</div>' +
+            '</div>' +
+            '</div>' +
+            
+            // Recent Failures
+            (failures.length > 0 ? 
+                '<div class="pt-2 border-t border-gray-700">' +
+                '<div class="text-gray-300 text-xs font-semibold mb-1 flex items-center">' +
+                '<i class="fas fa-exclamation-triangle text-red-400 mr-1"></i>最近の故障' +
+                '</div>' +
+                '<div class="space-y-1 max-h-24 overflow-y-auto">' +
+                failures.slice(0, 3).map(f => 
+                    '<div class="text-xs bg-gray-800/50 rounded p-1 cursor-pointer hover:bg-gray-700/50" onclick="viewFailureDetail(' + f.id + ')">' +
+                    '<div class="text-white truncate">' + f.title + '</div>' +
+                    '<div class="text-gray-500">' + new Date(f.report_date || f.created_at).toLocaleDateString('ja-JP') + '</div>' +
+                    '</div>'
+                ).join('') +
+                '</div>' +
+                '<button onclick="switchTab(\'failures\'); filterFailuresByEquipment(' + equipment.id + ')" class="text-blue-400 text-xs mt-1 hover:underline">' +
+                'すべて表示 >' +
+                '</button>' +
+                '</div>' : '') +
+            
+            // Recent Work
+            (workHistory.length > 0 ?
+                '<div class="pt-2 border-t border-gray-700">' +
+                '<div class="text-gray-300 text-xs font-semibold mb-1 flex items-center">' +
+                '<i class="fas fa-tools text-purple-400 mr-1"></i>最近の作業' +
+                '</div>' +
+                '<div class="space-y-1 max-h-24 overflow-y-auto">' +
+                workHistory.slice(0, 3).map(w =>
+                    '<div class="text-xs bg-gray-800/50 rounded p-1 cursor-pointer hover:bg-gray-700/50" onclick="viewWorkDetail(' + w.id + ')">' +
+                    '<div class="text-white truncate">' + (w.title || w.work_type) + '</div>' +
+                    '<div class="text-gray-500">' + new Date(w.start_time || w.created_at).toLocaleDateString('ja-JP') + '</div>' +
+                    '</div>'
+                ).join('') +
+                '</div>' +
+                '<button onclick="switchTab(\'work\'); filterWorkByEquipment(' + equipment.id + ')" class="text-blue-400 text-xs mt-1 hover:underline">' +
+                'すべて表示 >' +
+                '</button>' +
+                '</div>' : '') +
+            
+            // Action Buttons
+            '<div class="flex gap-2 pt-2 border-t border-gray-700">' +
+            '<button onclick="showFailureReportForEquipment(' + equipment.id + ')" class="flex-1 px-2 py-1.5 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded transition">' +
+            '<i class="fas fa-exclamation-triangle mr-1"></i>故障報告' +
+            '</button>' +
+            '<button onclick="showWorkHistoryForEquipment(' + equipment.id + ')" class="flex-1 px-2 py-1.5 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded transition">' +
+            '<i class="fas fa-tools mr-1"></i>作業記録' +
+            '</button>' +
+            '</div>' +
+            
+            '</div>';
+        
+        panel.classList.remove('hidden');
+    } catch (error) {
+        console.error('Error showing equipment integrated info:', error);
+    }
+};
+
+// Filter functions for equipment-specific views
+window.filterFailuresByEquipment = function(equipmentId) {
+    // This will be called when user clicks "show all" for failures
+    if (window.loadFailures) {
+        window.loadFailures();
+        // TODO: Add filter by equipment ID
+    }
+};
+
+window.filterWorkByEquipment = function(equipmentId) {
+    // This will be called when user clicks "show all" for work
+    if (window.loadWorkHistory) {
+        window.loadWorkHistory();
+        // TODO: Add filter by equipment ID
+    }
+};
+
+// Quick action functions with pre-filled equipment
+window.showFailureReportForEquipment = async function(equipmentId) {
+    await window.showFailureReportDialog();
+    // Pre-select equipment
+    const select = document.getElementById('failure-equipment');
+    if (select) {
+        select.value = equipmentId;
+    }
+};
+
+window.showWorkHistoryForEquipment = async function(equipmentId) {
+    await window.showWorkHistoryDialog();
+    // Pre-select equipment
+    const select = document.getElementById('work-equipment');
+    if (select) {
+        select.value = equipmentId;
+    }
+};
+
 // Export functions
 window.showNotification = showNotification;
 window.showDialog = showDialog;

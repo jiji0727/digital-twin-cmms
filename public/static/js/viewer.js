@@ -1198,7 +1198,12 @@ window.selectEquipment = function(id) {
         animateCamera();
     }
     
-    showSelectionPanel(equipment);
+    // Show integrated info if function is available (from cmms.js)
+    if (window.showEquipmentIntegratedInfo) {
+        window.showEquipmentIntegratedInfo(equipment);
+    } else {
+        showSelectionPanel(equipment);
+    }
 }
 
 function showSelectionPanel(equipment) {

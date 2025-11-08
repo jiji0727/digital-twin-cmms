@@ -2345,6 +2345,10 @@ app.get('/', (c) => {
                         <i class="fas fa-box mr-1"></i>
                         <span class="tab-label">部品</span>
                     </button>
+                    <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">
+                        <i class="fas fa-chart-bar mr-1"></i>
+                        <span class="tab-label">統計</span>
+                    </button>
                 </div>
 
                 <!-- Tab Content -->
@@ -2499,6 +2503,44 @@ app.get('/', (c) => {
                             </div>
                             <div class="space-y-2 max-h-80 overflow-y-auto" id="parts-list">
                                 <!-- Populated by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard Tab -->
+                    <div id="tab-dashboard" class="tab-content" style="display: none;">
+                        <div class="space-y-4">
+                            <h4 class="text-white font-semibold text-sm flex items-center">
+                                <i class="fas fa-chart-bar mr-2 text-blue-400"></i>
+                                統計ダッシュボード
+                            </h4>
+                            
+                            <!-- KPI Cards -->
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="card bg-blue-500/10 border-blue-500/30">
+                                    <div class="text-blue-400 text-xs mb-1">総設備数</div>
+                                    <div class="text-white text-2xl font-bold" id="dashboard-total-equipment">--</div>
+                                </div>
+                                <div class="card bg-green-500/10 border-green-500/30">
+                                    <div class="text-green-400 text-xs mb-1">稼働率</div>
+                                    <div class="text-white text-2xl font-bold" id="dashboard-uptime">--</div>
+                                </div>
+                                <div class="card bg-red-500/10 border-red-500/30">
+                                    <div class="text-red-400 text-xs mb-1">故障件数</div>
+                                    <div class="text-white text-2xl font-bold" id="dashboard-failures">--</div>
+                                </div>
+                                <div class="card bg-purple-500/10 border-purple-500/30">
+                                    <div class="text-purple-400 text-xs mb-1">作業完了</div>
+                                    <div class="text-white text-2xl font-bold" id="dashboard-work-completed">--</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Recent Activity -->
+                            <div>
+                                <h5 class="text-white text-xs font-semibold mb-2">最近のアクティビティ</h5>
+                                <div class="space-y-2 max-h-64 overflow-y-auto" id="dashboard-recent-activity">
+                                    <!-- Populated by JavaScript -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2727,6 +2769,9 @@ app.get('/', (c) => {
                         break;
                     case 'parts':
                         if (window.loadParts) window.loadParts();
+                        break;
+                    case 'dashboard':
+                        if (window.loadDashboard) window.loadDashboard();
                         break;
                 }
             }
