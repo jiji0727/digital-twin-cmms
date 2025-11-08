@@ -1,6 +1,6 @@
 // Advanced Digital Twin CMMS Viewer with LCC SDK
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { LCCRender } from '/sdk/lcc-0.5.3.js';
 
 console.log('🚀 Digital Twin CMMS Viewer with LCC SDK starting...');
@@ -14,6 +14,9 @@ const state = {
     lccObject: null,
     equipment: [],
     selectedEquipment: null,
+    piping: [],
+    selectedPiping: null,
+    pipingLines: [],
     raycaster: new THREE.Raycaster(),
     mouse: new THREE.Vector2(),
     markers: [],
@@ -24,7 +27,18 @@ const state = {
     draggedMarker: null,
     isDragging: false,
     modelLoaded: false,
-    sceneLogged: false
+    sceneLogged: false,
+    savedCameraViews: [],  // Array to store saved camera positions
+    // FPS movement
+    moveForward: false,
+    moveBackward: false,
+    moveLeft: false,
+    moveRight: false,
+    moveUp: false,
+    moveDown: false,
+    velocity: new THREE.Vector3(),
+    direction: new THREE.Vector3(),
+    moveSpeed: 50.0
 };
 
 // Initialize the 3D viewer with LCC SDK
@@ -64,16 +78,83 @@ async function initViewer() {
     state.renderer.toneMappingExposure = 1.2;
     updateLoadingProgress(20);
 
-    // Setup Orbit Controls
-    state.controls = new OrbitControls(state.camera, state.renderer.domElement);
-    state.controls.enableDamping = true;
-    state.controls.dampingFactor = 0.05;
-    state.controls.maxPolarAngle = Math.PI / 1.8;
-    state.controls.minDistance = 5;
-    state.controls.maxDistance = 200;
+    // Setup FPS Controls (PointerLock)
+    state.controls = new PointerLockControls(state.camera, document.body);
     
-    // Standard controls (left drag rotate, right drag pan, wheel zoom)
-    // Will be dynamically enabled/disabled based on edit mode and dragging state
+    // Click to enable FPS controls
+    canvas.addEventListener('click', () => {
+        if (!state.editMode && !state.isDragging) {
+            state.controls.lock();
+        }
+    });
+    
+    state.controls.addEventListener('lock', () => {
+        console.log('🎮 FPS controls enabled');
+    });
+    
+    state.controls.addEventListener('unlock', () => {
+        console.log('🎮 FPS controls disabled');
+    });
+    
+    // Keyboard controls
+    const onKeyDown = (event) => {
+        switch (event.code) {
+            case 'KeyW':
+            case 'ArrowUp':
+                state.moveForward = true;
+                break;
+            case 'KeyS':
+            case 'ArrowDown':
+                state.moveBackward = true;
+                break;
+            case 'KeyA':
+            case 'ArrowLeft':
+                state.moveLeft = true;
+                break;
+            case 'KeyD':
+            case 'ArrowRight':
+                state.moveRight = true;
+                break;
+            case 'Space':
+                state.moveUp = true;
+                break;
+            case 'ShiftLeft':
+            case 'ShiftRight':
+                state.moveDown = true;
+                break;
+        }
+    };
+    
+    const onKeyUp = (event) => {
+        switch (event.code) {
+            case 'KeyW':
+            case 'ArrowUp':
+                state.moveForward = false;
+                break;
+            case 'KeyS':
+            case 'ArrowDown':
+                state.moveBackward = false;
+                break;
+            case 'KeyA':
+            case 'ArrowLeft':
+                state.moveLeft = false;
+                break;
+            case 'KeyD':
+            case 'ArrowRight':
+                state.moveRight = false;
+                break;
+            case 'Space':
+                state.moveUp = false;
+                break;
+            case 'ShiftLeft':
+            case 'ShiftRight':
+                state.moveDown = false;
+                break;
+        }
+    };
+    
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
     
     updateLoadingProgress(25);
 
@@ -142,15 +223,14 @@ async function initViewer() {
             // LCC models render themselves, just set a good camera position
             // Set camera to a position that should show the model
             state.camera.position.set(15, 10, 15);
-            state.controls.target.set(0, 0, 0);
-            state.controls.update();
+            state.camera.lookAt(0, 0, 0);
             
             // Debug: Log scene contents
             console.log('📐 Camera positioned at:', state.camera.position);
             console.log('🎯 Scene children count:', state.scene.children.length);
             console.log('🎯 Scene children types:', state.scene.children.map(c => c.type + (c.name ? ' (' + c.name + ')' : '')));
             console.log('🎯 Model mesh:', mesh);
-            console.log('💡 Use mouse to orbit, scroll to zoom');
+            console.log('💡 Click to enable FPS controls, WASD to move, Mouse to look, ESC to exit');
         }, 
         (percent) => {
             const progress = 40 + (percent * 50); // 40% to 90%
@@ -183,6 +263,9 @@ async function initViewer() {
     await loadCMMSData();
     updateLoadingProgress(95);
 
+    // Load saved camera views
+    loadSavedViews();
+
     // Start animation loop
     animate();
     updateLoadingProgress(100);
@@ -196,8 +279,32 @@ async function initViewer() {
 function animate() {
     requestAnimationFrame(animate);
 
-    if (state.controls) {
-        state.controls.update();
+    const delta = state.clock.getDelta();
+
+    // FPS movement
+    if (state.controls.isLocked) {
+        state.velocity.x -= state.velocity.x * 10.0 * delta;
+        state.velocity.z -= state.velocity.z * 10.0 * delta;
+        state.velocity.y -= state.velocity.y * 10.0 * delta;
+
+        state.direction.z = Number(state.moveForward) - Number(state.moveBackward);
+        state.direction.x = Number(state.moveRight) - Number(state.moveLeft);
+        state.direction.y = Number(state.moveUp) - Number(state.moveDown);
+        state.direction.normalize();
+
+        if (state.moveForward || state.moveBackward) {
+            state.velocity.z -= state.direction.z * state.moveSpeed * delta;
+        }
+        if (state.moveLeft || state.moveRight) {
+            state.velocity.x -= state.direction.x * state.moveSpeed * delta;
+        }
+        if (state.moveUp || state.moveDown) {
+            state.velocity.y += state.direction.y * state.moveSpeed * delta;
+        }
+
+        state.controls.moveRight(-state.velocity.x * delta);
+        state.controls.moveForward(-state.velocity.z * delta);
+        state.camera.position.y += (state.velocity.y * delta);
     }
 
     // Update LCC rendering
@@ -208,16 +315,6 @@ function animate() {
     // Update equipment markers
     const time = Date.now() * 0.001;
     
-    // Debug: Log scene objects once
-    if (!state.sceneLogged && state.modelLoaded) {
-        console.log('🔍 Scene objects for occlusion test:', state.scene.children.map(c => ({
-            type: c.type,
-            name: c.name,
-            childrenCount: c.children?.length || 0
-        })));
-        state.sceneLogged = true;
-    }
-    
     state.markers.forEach(marker => {
         // Animate scale with pulse effect
         marker.scale.setScalar(1 + Math.sin(time * 2 + marker.position.x) * 0.1);
@@ -227,43 +324,52 @@ function animate() {
             marker.quaternion.copy(state.camera.quaternion);
         }
         
-        // Occlusion check: Hide markers behind model
-        // Cast ray from camera to marker
-        const direction = new THREE.Vector3();
-        direction.subVectors(marker.position, state.camera.position).normalize();
+        // Simple occlusion check for LCC models
+        // Since LCC Gaussian Splatting models don't provide raycastable geometry,
+        // we use a geometric approach based on the model's bounding box
         
-        const raycaster = new THREE.Raycaster(state.camera.position, direction);
-        const distanceToMarker = marker.position.distanceTo(state.camera.position);
+        // Define model's approximate bounding box (based on Big Mirror model)
+        // This should be adjusted based on actual model dimensions
+        const modelMin = new THREE.Vector3(-8, 0, -4);
+        const modelMax = new THREE.Vector3(8, 8, 4);
         
-        // Get all scene objects except markers and helpers
-        const intersectableObjects = state.scene.children.filter(obj => 
-            obj.type !== 'GridHelper' && 
-            obj.type !== 'AxesHelper' && 
-            !state.markers.includes(obj) &&
-            obj.type !== 'AmbientLight' &&
-            obj.type !== 'DirectionalLight' &&
-            obj.type !== 'HemisphereLight'
-        );
+        // Check if marker is behind camera (in view space)
+        const markerViewPos = marker.position.clone();
+        markerViewPos.applyMatrix4(state.camera.matrixWorldInverse);
         
-        const intersects = raycaster.intersectObjects(intersectableObjects, true);
+        if (markerViewPos.z > 0) {
+            // Marker is behind camera
+            marker.visible = false;
+            return;
+        }
         
-        // Check if something is blocking the view to the marker
-        let isOccluded = false;
-        for (const intersect of intersects) {
+        // Create ray from camera to marker
+        const cameraPos = state.camera.position;
+        const markerPos = marker.position;
+        const rayDirection = new THREE.Vector3().subVectors(markerPos, cameraPos).normalize();
+        
+        // Check if ray intersects with model's bounding box
+        const boundingBox = new THREE.Box3(modelMin, modelMax);
+        const ray = new THREE.Ray(cameraPos, rayDirection);
+        
+        const intersectionPoint = new THREE.Vector3();
+        const intersects = ray.intersectBox(boundingBox, intersectionPoint);
+        
+        if (intersects) {
+            // Ray intersects bounding box - check if intersection is closer than marker
+            const distanceToIntersection = cameraPos.distanceTo(intersectionPoint);
+            const distanceToMarker = cameraPos.distanceTo(markerPos);
+            
             // If intersection is closer than marker, marker is occluded
-            if (intersect.distance < distanceToMarker - 0.5) { // 0.5 margin for tolerance
-                isOccluded = true;
-                break;
+            if (distanceToIntersection < distanceToMarker - 0.5) { // 0.5 tolerance
+                marker.visible = false;
+                return;
             }
         }
         
-        // Set visibility based on occlusion
-        if (isOccluded) {
-            marker.visible = false;
-        } else {
-            marker.visible = true;
-            marker.material.opacity = 0.9;
-        }
+        // Marker is visible
+        marker.visible = true;
+        marker.material.opacity = 0.9;
     });
 
     state.renderer.render(state.scene, state.camera);
@@ -475,6 +581,12 @@ async function loadCMMSData() {
         renderEquipmentList(state.equipment);
         createEquipmentMarkers(state.equipment);
 
+        // Load piping data
+        const pipingResponse = await axios.get('/api/piping');
+        state.piping = pipingResponse.data;
+        renderPipingList(state.piping);
+        createPipingVisualization(state.piping);
+
         // Load maintenance data
         const maintenanceResponse = await axios.get('/api/maintenance');
         renderMaintenanceList(maintenanceResponse.data);
@@ -499,23 +611,36 @@ function renderEquipmentList(equipment) {
         list.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">設備データがありません</div>';
         return;
     }
-    list.innerHTML = equipment.map(eq => `
+    list.innerHTML = equipment.map(eq => {
+        const hasSavedView = state.savedCameraViews.some(v => v.equipmentId === eq.id);
+        return `
         <div class="glass rounded p-3 hover:bg-white hover:bg-opacity-10 transition">
             <div class="flex items-center justify-between">
                 <div class="flex items-center cursor-pointer flex-1" onclick="selectEquipment(${eq.id})">
                     <i class="fas fa-cog mr-2 status-${eq.status}"></i>
                     <span class="text-white text-sm font-medium">${eq.name}</span>
+                    ${hasSavedView ? '<i class="fas fa-bookmark ml-2 text-blue-400 text-xs" title="保存済み画角あり"></i>' : ''}
                 </div>
-                <button onclick="showEquipmentEditDialog(${eq.id}); event.stopPropagation();" 
-                        class="text-blue-400 hover:text-blue-300 ml-2 p-1">
-                    <i class="fas fa-edit"></i>
-                </button>
+                <div class="flex items-center space-x-1">
+                    ${hasSavedView ? `
+                    <button onclick="clearEquipmentCameraView(${eq.id}); event.stopPropagation();" 
+                            class="text-yellow-400 hover:text-yellow-300 p-1"
+                            title="画角をクリア">
+                        <i class="fas fa-bookmark-slash text-xs"></i>
+                    </button>
+                    ` : ''}
+                    <button onclick="showEquipmentEditDialog(${eq.id}); event.stopPropagation();" 
+                            class="text-blue-400 hover:text-blue-300 p-1">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                </div>
             </div>
             <div class="text-xs text-gray-400 mt-1">
                 ${eq.type} | ${eq.last_maintenance || '未実施'}
             </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function renderMaintenanceList(maintenance) {
@@ -591,7 +716,12 @@ function updateAnalyticsDashboard(analytics) {
         document.getElementById('uptime-display').textContent = analytics.uptime.toFixed(1) + '%';
     }
     
-    // Update system metrics
+    // Update HUD stats (new fullscreen UI)
+    if (window.updateHUDStats) {
+        window.updateHUDStats(analytics);
+    }
+    
+    // Update system metrics (legacy - now removed from new UI)
     const metricsContainer = document.getElementById('system-metrics');
     if (analytics.equipment && metricsContainer) {
         metricsContainer.innerHTML = `
@@ -661,30 +791,230 @@ function createEquipmentMarkers(equipment) {
     console.log(`✅ Created ${equipment.length} equipment markers`);
 }
 
+function createPipingVisualization(piping) {
+    console.log('🔧 Creating piping visualization...');
+    
+    if (!piping || piping.length === 0) {
+        console.warn('⚠️ No piping data to visualize');
+        return;
+    }
+    
+    // Clear existing piping lines
+    state.pipingLines.forEach(line => {
+        state.scene.remove(line);
+        if (line.geometry) line.geometry.dispose();
+        if (line.material) line.material.dispose();
+    });
+    state.pipingLines = [];
+    
+    piping.forEach(pipe => {
+        // Create line from start to end point
+        const start = new THREE.Vector3(
+            parseFloat(pipe.start_x) || 0,
+            parseFloat(pipe.start_y) || 0,
+            parseFloat(pipe.start_z) || 0
+        );
+        const end = new THREE.Vector3(
+            parseFloat(pipe.end_x) || 0,
+            parseFloat(pipe.end_y) || 0,
+            parseFloat(pipe.end_z) || 0
+        );
+        
+        // Create tube geometry for pipe
+        const direction = new THREE.Vector3().subVectors(end, start);
+        const length = direction.length();
+        const radius = (parseFloat(pipe.diameter) || 100) / 1000; // Convert mm to meters and use as radius
+        
+        // Create cylinder aligned with the pipe direction
+        const geometry = new THREE.CylinderGeometry(radius, radius, length, 16);
+        
+        // Color based on pipe type and status
+        let color = pipe.color || '#2563eb';
+        if (pipe.status === 'warning') color = '#f59e0b';
+        if (pipe.status === 'critical') color = '#ef4444';
+        
+        const material = new THREE.MeshStandardMaterial({
+            color: color,
+            emissive: color,
+            emissiveIntensity: 0.3,
+            transparent: true,
+            opacity: 0.8,
+            roughness: 0.4,
+            metalness: 0.6
+        });
+        
+        const pipeMesh = new THREE.Mesh(geometry, material);
+        
+        // Position and orient the cylinder
+        const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+        pipeMesh.position.copy(midpoint);
+        
+        // Orient cylinder to point from start to end
+        pipeMesh.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            direction.normalize()
+        );
+        
+        pipeMesh.userData = { pipingId: pipe.id, piping: pipe };
+        pipeMesh.name = `piping-${pipe.id}`;
+        
+        state.scene.add(pipeMesh);
+        state.pipingLines.push(pipeMesh);
+    });
+    
+    console.log(`✅ Created ${piping.length} piping visualizations`);
+}
+
+function renderPipingList(piping) {
+    const list = document.getElementById('piping-list');
+    if (!list) return; // Element doesn't exist yet
+    
+    if (!piping || piping.length === 0) {
+        list.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">配管データがありません</div>';
+        return;
+    }
+    
+    list.innerHTML = piping.map(pipe => {
+        const typeIcons = {
+            supply: 'fa-arrow-right',
+            return: 'fa-arrow-left',
+            drain: 'fa-arrow-down',
+            vent: 'fa-arrow-up',
+            other: 'fa-grip-lines'
+        };
+        const icon = typeIcons[pipe.pipe_type] || typeIcons.other;
+        
+        return `
+        <div class="glass rounded p-3 hover:bg-white hover:bg-opacity-10 transition">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center cursor-pointer flex-1" onclick="selectPiping(${pipe.id})">
+                    <i class="fas ${icon} mr-2 status-${pipe.status}"></i>
+                    <span class="text-white text-sm font-medium">${pipe.name}</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <button onclick="showPipingEditDialog(${pipe.id}); event.stopPropagation();" 
+                            class="text-blue-400 hover:text-blue-300 p-1">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="text-xs text-gray-400 mt-1">
+                ${pipe.pipe_type} | ${pipe.material || '材質不明'} | Ø${pipe.diameter || '?'}mm
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+window.selectPiping = function(id) {
+    const piping = state.piping.find(p => p.id === id);
+    if (!piping) return;
+    
+    state.selectedPiping = piping;
+    
+    // Focus camera on piping midpoint
+    const midpoint = new THREE.Vector3(
+        (parseFloat(piping.start_x) + parseFloat(piping.end_x)) / 2,
+        (parseFloat(piping.start_y) + parseFloat(piping.end_y)) / 2,
+        (parseFloat(piping.start_z) + parseFloat(piping.end_z)) / 2
+    );
+    
+    const offset = new THREE.Vector3(8, 5, 8);
+    const targetPos = midpoint.clone().add(offset);
+    
+    // Smooth camera transition
+    const startPos = state.camera.position.clone();
+    let progress = 0;
+    const duration = 1000;
+    const startTime = Date.now();
+    
+    function animateCamera() {
+        const elapsed = Date.now() - startTime;
+        progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        
+        state.camera.position.lerpVectors(startPos, targetPos, eased);
+        
+        if (progress === 1) {
+            state.camera.lookAt(midpoint);
+        }
+        
+        if (progress < 1) {
+            requestAnimationFrame(animateCamera);
+        }
+    }
+    animateCamera();
+    
+    showPipingPanel(piping);
+}
+
+function showPipingPanel(piping) {
+    const panel = document.getElementById('selection-panel');
+    const content = document.getElementById('selection-content');
+    
+    content.innerHTML = `
+        <div class="space-y-3">
+            <div>
+                <div class="text-gray-400 text-xs">配管名</div>
+                <div class="text-white font-semibold">${piping.name}</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-xs">種類</div>
+                <div class="text-white text-sm">${piping.pipe_type}</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-xs">ステータス</div>
+                <div class="status-${piping.status} font-semibold capitalize">${piping.status}</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-xs">材質</div>
+                <div class="text-white">${piping.material || '不明'}</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-xs">口径</div>
+                <div class="text-white">${piping.diameter || '?'} mm</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-xs">次回点検予定</div>
+                <div class="text-white">${piping.next_inspection || '未定'}</div>
+            </div>
+            ${piping.description ? `
+            <div>
+                <div class="text-gray-400 text-xs">説明</div>
+                <div class="text-white text-sm">${piping.description}</div>
+            </div>
+            ` : ''}
+            <div class="pt-2 border-t border-gray-600 space-y-2">
+                <button class="w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition"
+                        onclick="showPipingInspectionDialog(${piping.id})">
+                    <i class="fas fa-clipboard-check mr-2"></i>点検記録
+                </button>
+            </div>
+        </div>
+    `;
+    
+    panel.classList.remove('hidden');
+}
+
+window.showPipingEditDialog = function(id) {
+    showNotification('配管編集機能は開発中です', 'info');
+}
+
+window.showPipingInspectionDialog = function(id) {
+    showNotification('配管点検記録機能は開発中です', 'info');
+}
+
+window.togglePipingVisibility = function(checkbox) {
+    state.pipingLines.forEach(line => {
+        line.visible = checkbox.checked;
+    });
+}
+
 // Control Functions
 window.resetView = function() {
-    if (state.lccObject && state.lccObject.mesh) {
-        const box = new THREE.Box3().setFromObject(state.lccObject.mesh);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = state.camera.fov * (Math.PI / 180);
-        let cameraZ = Math.abs(maxDim / Math.tan(fov / 2)) * 1.5;
-        
-        state.camera.position.set(
-            center.x + cameraZ * 0.7, 
-            center.y + cameraZ * 0.5, 
-            center.z + cameraZ * 0.7
-        );
-        state.controls.target.copy(center);
-        state.controls.update();
-    } else {
-        state.camera.position.set(20, 15, 20);
-        state.camera.lookAt(0, 0, 0);
-        state.controls.target.set(0, 0, 0);
-        state.controls.update();
-    }
+    state.camera.position.set(15, 10, 15);
+    state.camera.lookAt(0, 0, 0);
+    showNotification('ホーム視点にリセットしました', 'info');
 }
 
 window.toggleViewMode = function() {
@@ -738,13 +1068,26 @@ window.selectEquipment = function(id) {
     const marker = state.markers.find(m => m.userData.equipmentId === id);
     if (marker) {
         const targetPos = marker.position.clone();
-        const offset = new THREE.Vector3(8, 5, 8);
+        
+        // Check if there's a saved camera view for this equipment
+        const savedView = getSavedViewForEquipment(id);
+        
+        let endPos, endRotation;
+        if (savedView) {
+            // Use saved camera position and rotation
+            endPos = new THREE.Vector3(savedView.position.x, savedView.position.y, savedView.position.z);
+            if (savedView.rotation) {
+                endRotation = new THREE.Euler(savedView.rotation.x, savedView.rotation.y, savedView.rotation.z);
+            }
+        } else {
+            // Use default offset
+            const offset = new THREE.Vector3(8, 5, 8);
+            endPos = targetPos.clone().add(offset);
+        }
         
         // Smooth camera transition
         const startPos = state.camera.position.clone();
-        const endPos = targetPos.clone().add(offset);
-        const startTarget = state.controls.target.clone();
-        const endTarget = targetPos.clone();
+        const startRotation = state.camera.rotation.clone();
         
         let progress = 0;
         const duration = 1000;
@@ -757,8 +1100,15 @@ window.selectEquipment = function(id) {
             const eased = 1 - Math.pow(1 - progress, 3);
             
             state.camera.position.lerpVectors(startPos, endPos, eased);
-            state.controls.target.lerpVectors(startTarget, endTarget, eased);
-            state.controls.update();
+            
+            // Look at marker or restore saved rotation
+            if (progress === 1) {
+                if (endRotation) {
+                    state.camera.rotation.copy(endRotation);
+                } else {
+                    state.camera.lookAt(targetPos);
+                }
+            }
             
             if (progress < 1) {
                 requestAnimationFrame(animateCamera);
@@ -806,7 +1156,11 @@ function showSelectionPanel(equipment) {
                 <div class="text-white text-sm">${equipment.description}</div>
             </div>
             ` : ''}
-            <div class="pt-2 border-t border-gray-600">
+            <div class="pt-2 border-t border-gray-600 space-y-2">
+                <button class="w-full glass rounded px-4 py-2 text-blue-400 text-sm hover:bg-white hover:bg-opacity-20 transition"
+                        onclick="saveEquipmentCameraView(${equipment.id})">
+                    <i class="fas fa-bookmark mr-2"></i>現在の画角を保存
+                </button>
                 <button class="w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition"
                         onclick="createMaintenancePlan(${equipment.id})">
                     <i class="fas fa-wrench mr-2"></i>保守計画を作成
@@ -816,6 +1170,96 @@ function showSelectionPanel(equipment) {
     `;
     
     panel.classList.remove('hidden');
+}
+
+// Camera View Management Functions (Equipment-specific)
+window.saveEquipmentCameraView = function(equipmentId) {
+    if (!state.camera || !state.controls) {
+        showNotification('カメラが初期化されていません', 'error');
+        return;
+    }
+    
+    if (!state.selectedEquipment || state.selectedEquipment.id !== equipmentId) {
+        showNotification('設備が選択されていません', 'error');
+        return;
+    }
+    
+    // Save camera position and rotation for this equipment (FPS style)
+    const cameraView = {
+        equipmentId: equipmentId,
+        position: {
+            x: state.camera.position.x,
+            y: state.camera.position.y,
+            z: state.camera.position.z
+        },
+        rotation: {
+            x: state.camera.rotation.x,
+            y: state.camera.rotation.y,
+            z: state.camera.rotation.z
+        },
+        timestamp: new Date().toISOString()
+    };
+    
+    // Update or add to saved views
+    const existingIndex = state.savedCameraViews.findIndex(v => v.equipmentId === equipmentId);
+    if (existingIndex >= 0) {
+        state.savedCameraViews[existingIndex] = cameraView;
+    } else {
+        state.savedCameraViews.push(cameraView);
+    }
+    
+    // Save to localStorage
+    try {
+        localStorage.setItem('cmms_equipment_views', JSON.stringify(state.savedCameraViews));
+        showNotification(`${state.selectedEquipment.name}の画角を保存しました`, 'success');
+        updateEquipmentListIcons();
+    } catch (error) {
+        console.error('Failed to save camera view:', error);
+        showNotification('画角の保存に失敗しました', 'error');
+    }
+}
+
+window.clearEquipmentCameraView = function(equipmentId) {
+    const equipment = state.equipment.find(eq => eq.id === equipmentId);
+    if (!equipment) return;
+    
+    if (!confirm(`${equipment.name}の保存された画角を削除しますか?`)) return;
+    
+    state.savedCameraViews = state.savedCameraViews.filter(v => v.equipmentId !== equipmentId);
+    
+    // Update localStorage
+    try {
+        localStorage.setItem('cmms_equipment_views', JSON.stringify(state.savedCameraViews));
+        showNotification(`${equipment.name}の画角を削除しました`, 'success');
+        updateEquipmentListIcons();
+    } catch (error) {
+        console.error('Failed to delete camera view:', error);
+        showNotification('画角の削除に失敗しました', 'error');
+    }
+}
+
+function getSavedViewForEquipment(equipmentId) {
+    return state.savedCameraViews.find(v => v.equipmentId === equipmentId);
+}
+
+function loadSavedViews() {
+    try {
+        const savedData = localStorage.getItem('cmms_equipment_views');
+        if (savedData) {
+            state.savedCameraViews = JSON.parse(savedData);
+            console.log(`📷 Loaded ${state.savedCameraViews.length} equipment camera views`);
+            updateEquipmentListIcons();
+        }
+    } catch (error) {
+        console.error('Failed to load saved camera views:', error);
+    }
+}
+
+function updateEquipmentListIcons() {
+    // Update equipment list to show which items have saved views
+    if (state.equipment && state.equipment.length > 0) {
+        renderEquipmentList(state.equipment);
+    }
 }
 
 // Load recent alerts from analytics events
@@ -865,6 +1309,104 @@ function getTimeAgo(date) {
 
 window.createMaintenancePlan = function(equipmentId) {
     alert(`設備ID: ${equipmentId}の保守計画作成機能は開発中です`);
+}
+
+// Notification system
+function showNotification(message, type = 'info') {
+    // Create notification container if it doesn't exist
+    let container = document.getElementById('notification-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'notification-container';
+        container.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        `;
+        document.body.appendChild(container);
+    }
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    const bgColors = {
+        success: 'rgba(16, 185, 129, 0.95)',
+        error: 'rgba(239, 68, 68, 0.95)',
+        warning: 'rgba(245, 158, 11, 0.95)',
+        info: 'rgba(59, 130, 246, 0.95)'
+    };
+    
+    const icons = {
+        success: 'fa-check-circle',
+        error: 'fa-exclamation-circle',
+        warning: 'fa-exclamation-triangle',
+        info: 'fa-info-circle'
+    };
+    
+    notification.style.cssText = `
+        background: ${bgColors[type] || bgColors.info};
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        animation: slideIn 0.3s ease-out;
+        backdrop-filter: blur(10px);
+        min-width: 300px;
+        max-width: 400px;
+    `;
+    
+    notification.innerHTML = `
+        <i class="fas ${icons[type] || icons.info} text-lg"></i>
+        <span style="flex: 1;">${message}</span>
+    `;
+    
+    container.appendChild(notification);
+    
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-in';
+        setTimeout(() => {
+            container.removeChild(notification);
+            if (container.children.length === 0) {
+                document.body.removeChild(container);
+            }
+        }, 300);
+    }, 3000);
+}
+
+// Add CSS animations
+if (!document.getElementById('notification-styles')) {
+    const style = document.createElement('style');
+    style.id = 'notification-styles';
+    style.textContent = `
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+    `;
+    document.head.appendChild(style);
 }
 
 window.closeSelection = function() {
@@ -1177,28 +1719,6 @@ window.saveEquipment = async function(equipmentId) {
     } else {
         alert('位置を設定してから保存してください');
     }
-}
-
-// Notification system
-function showNotification(message, type = 'info') {
-    const colors = {
-        info: 'bg-blue-600',
-        success: 'bg-green-600',
-        error: 'bg-red-600',
-        warning: 'bg-yellow-600'
-    };
-    
-    const notification = document.createElement('div');
-    notification.className = `fixed top-20 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in`;
-    notification.textContent = message;
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        notification.style.opacity = '0';
-        notification.style.transition = 'opacity 0.3s';
-        setTimeout(() => notification.remove(), 300);
-    }, 3000);
 }
 
 // Loading screen functions
