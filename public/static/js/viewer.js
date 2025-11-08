@@ -94,8 +94,8 @@ async function initViewer() {
             Math.cos(state.cameraYaw)
         ).normalize();
         
-        // Move camera forward or backward based on wheel delta
-        const moveDistance = event.deltaY * state.moveSpeed;
+        // Move camera forward or backward based on wheel delta (inverted)
+        const moveDistance = -event.deltaY * state.moveSpeed;
         state.camera.position.x += forward.x * moveDistance;
         state.camera.position.z += forward.z * moveDistance;
     }, { passive: false });
@@ -118,12 +118,12 @@ async function initViewer() {
     // Mouse move - handle rotation and pan
     canvas.addEventListener('mousemove', (event) => {
         if (state.isLeftDragging) {
-            // FPS-style camera rotation
+            // FPS-style camera rotation (inverted directions)
             const deltaX = event.clientX - state.lastMouseX;
             const deltaY = event.clientY - state.lastMouseY;
             
-            state.cameraYaw -= deltaX * state.rotateSpeed;
-            state.cameraPitch -= deltaY * state.rotateSpeed;
+            state.cameraYaw += deltaX * state.rotateSpeed;
+            state.cameraPitch += deltaY * state.rotateSpeed;
             
             // Clamp pitch to prevent flipping
             state.cameraPitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, state.cameraPitch));
