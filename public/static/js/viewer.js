@@ -19,7 +19,6 @@ const state = {
     mouse: new THREE.Vector2(),
     markers: [],
     clock: new THREE.Clock(),
-    editMode: false,
     isPlacingEquipment: false,
     equipmentToPlace: null,
     draggedMarker: null,
@@ -41,7 +40,8 @@ const state = {
     isPlacingPiping: false,
     pipingStartPoint: null,
     pipingEndPoint: null,
-    pipingToEdit: null  // Store piping being edited
+    pipingToEdit: null,  // Store piping being edited
+    isMarkerDragging: false  // Flag to prevent camera movement while dragging marker
 };
 
 // Initialize the 3D viewer with LCC SDK
@@ -109,6 +109,7 @@ async function initViewer() {
 
     // Mouse down - start dragging
     canvas.addEventListener('mousedown', (event) => {
+        // Don't start camera drag if clicking on marker (will be handled by onMouseDown)
         if (event.button === 0) { // Left button - FPS rotation
             state.isLeftDragging = true;
             state.lastMouseX = event.clientX;
@@ -124,6 +125,11 @@ async function initViewer() {
 
     // Mouse move - handle rotation and pan
     canvas.addEventListener('mousemove', (event) => {
+        // Skip camera movement if dragging a marker
+        if (state.isMarkerDragging) {
+            return;
+        }
+        
         if (state.isLeftDragging) {
             // FPS-style camera rotation (inverted directions)
             const deltaX = event.clientX - state.lastMouseX;
@@ -167,14 +173,17 @@ async function initViewer() {
 
     // Mouse up - stop dragging
     canvas.addEventListener('mouseup', () => {
-        state.isLeftDragging = false;
-        state.isRightDragging = false;
-        canvas.style.cursor = 'default';
-        
-        // Reset isDragging flag after a short delay to allow click events
-        setTimeout(() => {
-            state.isDragging = false;
-        }, 50);
+        // Only reset camera dragging if not dragging marker
+        if (!state.isMarkerDragging) {
+            state.isLeftDragging = false;
+            state.isRightDragging = false;
+            canvas.style.cursor = 'default';
+            
+            // Reset isDragging flag after a short delay to allow click events
+            setTimeout(() => {
+                state.isDragging = false;
+            }, 50);
+        }
     });
 
     // Prevent context menu on right click
@@ -433,15 +442,11 @@ function onMouseDown(event) {
     state.raycaster.setFromCamera(state.mouse, state.camera);
     const intersects = state.raycaster.intersectObjects(state.markers);
     
-    if (intersects.length > 0 && state.editMode) {
+    if (intersects.length > 0) {
         const marker = intersects[0].object;
         state.draggedMarker = marker;
         state.isDragging = true;
-        
-        // Disable controls while dragging marker
-        if (state.controls) {
-            state.controls.enabled = false;
-        }
+        state.isMarkerDragging = true; // New flag to prevent camera movement
         
         document.getElementById('viewer-canvas').style.cursor = 'grabbing';
     }
@@ -456,13 +461,9 @@ function onMouseUp(event) {
         
         state.isDragging = false;
         state.draggedMarker = null;
+        state.isMarkerDragging = false; // Reset flag
         
-        // Re-enable controls after dragging
-        if (state.controls) {
-            state.controls.enabled = true;
-        }
-        
-        document.getElementById('viewer-canvas').style.cursor = state.editMode ? 'pointer' : 'default';
+        document.getElementById('viewer-canvas').style.cursor = 'default';
     }
 }
 
@@ -486,13 +487,8 @@ function onClick(event) {
     if (markerIntersects.length > 0) {
         const marker = markerIntersects[0].object;
         if (marker.userData.equipmentId) {
-            if (state.editMode) {
-                // In edit mode, prepare to drag marker
-                state.draggedMarker = marker;
-            } else {
-                // In normal mode, select equipment
-                window.selectEquipment(marker.userData.equipmentId);
-            }
+            // Select equipment (clicking again will allow dragging via onMouseMove)
+            window.selectEquipment(marker.userData.equipmentId);
         }
         return;
     }
@@ -505,28 +501,6 @@ function onClick(event) {
             window.selectPiping(pipingMesh.userData.pipingId);
         }
         return;
-    }
-    
-    // If edit mode and clicked on model surface
-    if (state.editMode && state.modelLoaded) {
-        // Raycast against all objects in the scene (excluding markers and helpers)
-        const intersectableObjects = state.scene.children.filter(obj => 
-            obj.type !== 'GridHelper' && 
-            obj.type !== 'AxesHelper' && 
-            !state.markers.includes(obj) &&
-            !state.pipingLines.includes(obj) &&
-            obj.type !== 'AmbientLight' &&
-            obj.type !== 'DirectionalLight' &&
-            obj.type !== 'HemisphereLight'
-        );
-        
-        const modelIntersects = state.raycaster.intersectObjects(intersectableObjects, true);
-        if (modelIntersects.length > 0) {
-            const point = modelIntersects[0].point;
-            console.log('🎯 Clicked on model at:', point);
-            console.log('🎯 Intersected object:', modelIntersects[0].object);
-            showPositionInfo(point);
-        }
     }
 }
 
@@ -1543,34 +1517,7 @@ window.closeSelection = function() {
 // ============================================
 
 // Toggle edit mode
-window.toggleEditMode = function() {
-    // Check if model is loaded
-    if (!state.modelLoaded) {
-        showNotification('モデルの読み込みが完了するまでお待ちください...', 'warning');
-        return;
-    }
-    
-    state.editMode = !state.editMode;
-    
-    const btn = document.getElementById('edit-mode-btn');
-    if (btn) {
-        if (state.editMode) {
-            btn.classList.add('active');
-            btn.innerHTML = '<i class="fas fa-edit mr-2"></i>編集モード: ON';
-            showNotification('編集モードが有効になりました。設備をクリックして移動できます。', 'info');
-        } else {
-            btn.classList.remove('active');
-            btn.innerHTML = '<i class="fas fa-edit mr-2"></i>編集モード';
-            exitPlacementMode();
-            showNotification('編集モードが無効になりました', 'info');
-        }
-    }
-    
-    // Update controls
-    if (state.controls) {
-        state.controls.enabled = !state.editMode || !state.isPlacingEquipment;
-    }
-}
+// Edit mode removed - markers are always draggable
 
 // Enter equipment placement mode
 window.startPlacingEquipment = function(equipment = null) {
@@ -1602,10 +1549,6 @@ window.startPlacingEquipment = function(equipment = null) {
 function exitPlacementMode() {
     state.isPlacingEquipment = false;
     state.equipmentToPlace = null;
-    
-    if (state.controls && !state.editMode) {
-        state.controls.enabled = true;
-    }
     
     document.getElementById('viewer-canvas').style.cursor = 'default';
 }
@@ -1766,7 +1709,6 @@ window.startRepositioning = function(equipmentId) {
     const equipment = state.equipment.find(eq => eq.id === equipmentId);
     if (equipment) {
         closeEquipmentDialog();
-        state.editMode = true;
         startPlacingEquipment(equipment);
     }
 }

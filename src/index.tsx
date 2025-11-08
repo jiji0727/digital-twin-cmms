@@ -845,9 +845,6 @@ app.get('/', (c) => {
                         <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="resetView()">
                             <i class="fas fa-home mr-2"></i>ホーム視点
                         </button>
-                        <button id="edit-mode-btn" class="control-btn px-4 py-2 text-white rounded text-sm" onclick="toggleEditMode()">
-                            <i class="fas fa-edit mr-2"></i>編集モード
-                        </button>
                         <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="showEquipmentEditDialog()">
                             <i class="fas fa-plus mr-2"></i>設備追加
                         </button>
@@ -1058,9 +1055,6 @@ app.get('/', (c) => {
             <div class="fixed bottom-6 left-6 flex flex-col space-y-3 z-40">
                 <button class="fab glass text-white" onclick="resetView()" title="ホーム視点に戻る">
                     <i class="fas fa-home text-xl"></i>
-                </button>
-                <button class="fab glass text-white" onclick="toggleEditMode()" title="編集モード切替">
-                    <i class="fas fa-edit text-xl"></i>
                 </button>
                 <button class="fab glass text-white" onclick="showEquipmentEditDialog()" title="設備を追加">
                     <i class="fas fa-plus text-xl"></i>
