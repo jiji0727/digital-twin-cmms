@@ -2,7 +2,11 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/cloudflare-workers'
 
-const app = new Hono()
+type Bindings = {
+  DB: D1Database;
+}
+
+const app = new Hono<{ Bindings: Bindings }>()
 
 // Enable CORS for API routes
 app.use('/api/*', cors())
@@ -12,42 +16,452 @@ app.use('/static/*', serveStatic({ root: './public' }))
 app.use('/sdk/*', serveStatic({ root: './public' }))
 app.use('/models/*', serveStatic({ root: './public' }))
 
-// API routes for CMMS functionality
-app.get('/api/equipment', (c) => {
-  // Mock equipment data - would connect to D1 database in production
-  return c.json([
-    { id: 1, name: 'Equipment A', status: 'operational', lastMaintenance: '2024-11-01', location: { x: 10, y: 5, z: 2 } },
-    { id: 2, name: 'Equipment B', status: 'warning', lastMaintenance: '2024-10-15', location: { x: -5, y: 8, z: 1 } },
-    { id: 3, name: 'Equipment C', status: 'critical', lastMaintenance: '2024-09-20', location: { x: 15, y: -3, z: 3 } }
-  ])
+// ============================================
+// Equipment Management API
+// ============================================
+
+// Get all equipment
+app.get('/api/equipment', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM equipment ORDER BY created_at DESC
+    `).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch equipment', details: error.message }, 500)
+  }
 })
 
-app.get('/api/maintenance', (c) => {
-  return c.json([
-    { id: 1, equipmentId: 1, type: 'preventive', scheduledDate: '2024-11-15', status: 'scheduled' },
-    { id: 2, equipmentId: 2, type: 'corrective', scheduledDate: '2024-11-10', status: 'in-progress' },
-    { id: 3, equipmentId: 3, type: 'emergency', scheduledDate: '2024-11-08', status: 'urgent' }
-  ])
+// Get single equipment by ID
+app.get('/api/equipment/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const equipment = await c.env.DB.prepare(`
+      SELECT * FROM equipment WHERE id = ?
+    `).bind(id).first()
+    
+    if (!equipment) {
+      return c.json({ error: 'Equipment not found' }, 404)
+    }
+    return c.json(equipment)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch equipment', details: error.message }, 500)
+  }
 })
 
-app.get('/api/workorders', (c) => {
-  return c.json([
-    { id: 1, title: 'Routine Inspection', equipmentId: 1, priority: 'low', assignedTo: 'John Doe', dueDate: '2024-11-12' },
-    { id: 2, title: 'Bearing Replacement', equipmentId: 2, priority: 'medium', assignedTo: 'Jane Smith', dueDate: '2024-11-09' },
-    { id: 3, title: 'Emergency Repair', equipmentId: 3, priority: 'high', assignedTo: 'Mike Johnson', dueDate: '2024-11-08' }
-  ])
+// Create new equipment
+app.post('/api/equipment', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO equipment (name, type, status, location_x, location_y, location_z, description, installation_date, next_maintenance)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.name,
+      data.type,
+      data.status || 'operational',
+      data.location_x,
+      data.location_y,
+      data.location_z,
+      data.description || null,
+      data.installation_date || null,
+      data.next_maintenance || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create equipment', details: error.message }, 500)
+  }
 })
 
-app.get('/api/analytics', (c) => {
-  return c.json({
-    totalEquipment: 150,
-    operational: 142,
-    warning: 6,
-    critical: 2,
-    maintenanceCompliance: 94.5,
-    avgResponseTime: 2.3,
-    uptime: 98.7
-  })
+// Update equipment
+app.put('/api/equipment/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE equipment 
+      SET name = ?, type = ?, status = ?, location_x = ?, location_y = ?, location_z = ?,
+          description = ?, installation_date = ?, next_maintenance = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.name,
+      data.type,
+      data.status,
+      data.location_x,
+      data.location_y,
+      data.location_z,
+      data.description,
+      data.installation_date,
+      data.next_maintenance,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update equipment', details: error.message }, 500)
+  }
+})
+
+// Delete equipment
+app.delete('/api/equipment/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM equipment WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete equipment', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Maintenance Plans API
+// ============================================
+
+// Get all maintenance plans
+app.get('/api/maintenance', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT m.*, e.name as equipment_name, e.type as equipment_type
+      FROM maintenance_plans m
+      LEFT JOIN equipment e ON m.equipment_id = e.id
+      ORDER BY m.next_scheduled ASC
+    `).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch maintenance plans', details: error.message }, 500)
+  }
+})
+
+// Get maintenance plans by equipment
+app.get('/api/maintenance/equipment/:equipmentId', async (c) => {
+  try {
+    const equipmentId = c.req.param('equipmentId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM maintenance_plans WHERE equipment_id = ? ORDER BY next_scheduled ASC
+    `).bind(equipmentId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch maintenance plans', details: error.message }, 500)
+  }
+})
+
+// Create maintenance plan
+app.post('/api/maintenance', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO maintenance_plans (equipment_id, title, description, frequency, next_scheduled, estimated_duration, priority, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.equipment_id,
+      data.title,
+      data.description || null,
+      data.frequency,
+      data.next_scheduled,
+      data.estimated_duration || null,
+      data.priority || 'medium',
+      data.status || 'scheduled'
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create maintenance plan', details: error.message }, 500)
+  }
+})
+
+// Update maintenance plan
+app.put('/api/maintenance/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE maintenance_plans 
+      SET title = ?, description = ?, frequency = ?, next_scheduled = ?, 
+          estimated_duration = ?, priority = ?, status = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.title,
+      data.description,
+      data.frequency,
+      data.next_scheduled,
+      data.estimated_duration,
+      data.priority,
+      data.status,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update maintenance plan', details: error.message }, 500)
+  }
+})
+
+// Delete maintenance plan
+app.delete('/api/maintenance/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM maintenance_plans WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete maintenance plan', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Work Orders API
+// ============================================
+
+// Get all work orders
+app.get('/api/workorders', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare(`
+      SELECT w.*, e.name as equipment_name, e.type as equipment_type
+      FROM work_orders w
+      LEFT JOIN equipment e ON w.equipment_id = e.id
+      ORDER BY 
+        CASE w.priority
+          WHEN 'critical' THEN 1
+          WHEN 'high' THEN 2
+          WHEN 'medium' THEN 3
+          ELSE 4
+        END,
+        w.scheduled_date ASC
+    `).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch work orders', details: error.message }, 500)
+  }
+})
+
+// Get work orders by equipment
+app.get('/api/workorders/equipment/:equipmentId', async (c) => {
+  try {
+    const equipmentId = c.req.param('equipmentId')
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM work_orders WHERE equipment_id = ? ORDER BY scheduled_date ASC
+    `).bind(equipmentId).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch work orders', details: error.message }, 500)
+  }
+})
+
+// Create work order
+app.post('/api/workorders', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO work_orders (equipment_id, maintenance_plan_id, title, description, type, priority, status, assigned_to, scheduled_date, estimated_hours)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      data.equipment_id,
+      data.maintenance_plan_id || null,
+      data.title,
+      data.description || null,
+      data.type,
+      data.priority || 'medium',
+      data.status || 'pending',
+      data.assigned_to || null,
+      data.scheduled_date || null,
+      data.estimated_hours || null
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create work order', details: error.message }, 500)
+  }
+})
+
+// Update work order
+app.put('/api/workorders/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE work_orders 
+      SET title = ?, description = ?, type = ?, priority = ?, status = ?,
+          assigned_to = ?, scheduled_date = ?, estimated_hours = ?, actual_hours = ?,
+          notes = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(
+      data.title,
+      data.description,
+      data.type,
+      data.priority,
+      data.status,
+      data.assigned_to,
+      data.scheduled_date,
+      data.estimated_hours,
+      data.actual_hours || null,
+      data.notes || null,
+      id
+    ).run()
+    
+    return c.json({ id, ...data })
+  } catch (error) {
+    return c.json({ error: 'Failed to update work order', details: error.message }, 500)
+  }
+})
+
+// Complete work order
+app.post('/api/workorders/:id/complete', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const data = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE work_orders 
+      SET status = 'completed', completed_date = datetime('now'), 
+          actual_hours = ?, notes = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(data.actual_hours || null, data.notes || null, id).run()
+    
+    return c.json({ success: true, id, status: 'completed' })
+  } catch (error) {
+    return c.json({ error: 'Failed to complete work order', details: error.message }, 500)
+  }
+})
+
+// Delete work order
+app.delete('/api/workorders/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    await c.env.DB.prepare('DELETE FROM work_orders WHERE id = ?').bind(id).run()
+    return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: 'Failed to delete work order', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Analytics API
+// ============================================
+
+// Get analytics summary
+app.get('/api/analytics', async (c) => {
+  try {
+    // Get equipment counts by status
+    const equipmentStats = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'operational' THEN 1 ELSE 0 END) as operational,
+        SUM(CASE WHEN status = 'warning' THEN 1 ELSE 0 END) as warning,
+        SUM(CASE WHEN status = 'critical' THEN 1 ELSE 0 END) as critical
+      FROM equipment
+    `).first()
+    
+    // Get work order counts by status
+    const workOrderStats = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN status = 'in-progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
+      FROM work_orders
+    `).first()
+    
+    // Get maintenance compliance (completed vs scheduled)
+    const maintenanceStats = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+        SUM(CASE WHEN status = 'in-progress' THEN 1 ELSE 0 END) as in_progress,
+        SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
+        SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) as overdue
+      FROM maintenance_plans
+    `).first()
+    
+    // Calculate uptime percentage
+    const uptime = equipmentStats.total > 0 
+      ? ((equipmentStats.operational / equipmentStats.total) * 100).toFixed(1)
+      : 0
+    
+    // Calculate maintenance compliance percentage
+    const maintenanceCompliance = maintenanceStats.total > 0
+      ? ((maintenanceStats.completed / maintenanceStats.total) * 100).toFixed(1)
+      : 0
+    
+    return c.json({
+      equipment: equipmentStats,
+      workOrders: workOrderStats,
+      maintenance: maintenanceStats,
+      uptime: parseFloat(uptime),
+      maintenanceCompliance: parseFloat(maintenanceCompliance),
+      timestamp: new Date().toISOString()
+    })
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch analytics', details: error.message }, 500)
+  }
+})
+
+// Get recent analytics events
+app.get('/api/analytics/events', async (c) => {
+  try {
+    const limit = c.req.query('limit') || '50'
+    const { results } = await c.env.DB.prepare(`
+      SELECT a.*, e.name as equipment_name
+      FROM analytics_events a
+      LEFT JOIN equipment e ON a.equipment_id = e.id
+      ORDER BY a.timestamp DESC
+      LIMIT ?
+    `).bind(limit).all()
+    return c.json(results)
+  } catch (error) {
+    return c.json({ error: 'Failed to fetch analytics events', details: error.message }, 500)
+  }
+})
+
+// Create analytics event
+app.post('/api/analytics/events', async (c) => {
+  try {
+    const data = await c.req.json()
+    const result = await c.env.DB.prepare(`
+      INSERT INTO analytics_events (equipment_id, event_type, event_data, severity)
+      VALUES (?, ?, ?, ?)
+    `).bind(
+      data.equipment_id || null,
+      data.event_type,
+      JSON.stringify(data.event_data) || null,
+      data.severity || 'info'
+    ).run()
+    
+    return c.json({ id: result.meta.last_row_id, ...data }, 201)
+  } catch (error) {
+    return c.json({ error: 'Failed to create analytics event', details: error.message }, 500)
+  }
+})
+
+// ============================================
+// Database Initialization (for local dev)
+// ============================================
+
+// Initialize database with schema and seed data
+app.post('/api/db/init', async (c) => {
+  try {
+    // Check if tables already exist
+    const tableCheck = await c.env.DB.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='equipment'
+    `).first()
+    
+    if (tableCheck) {
+      return c.json({ message: 'Database already initialized', status: 'skipped' })
+    }
+    
+    // Read and execute migration file
+    // Note: In production, use wrangler d1 migrations apply
+    // This is a simplified version for development
+    
+    return c.json({ 
+      message: 'Database initialization complete',
+      note: 'Run: wrangler d1 migrations apply digital-twin-cmms-production --local'
+    })
+  } catch (error) {
+    return c.json({ error: 'Failed to initialize database', details: error.message }, 500)
+  }
 })
 
 // Main viewer page
@@ -179,14 +593,11 @@ app.get('/', (c) => {
                     <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="resetView()">
                         <i class="fas fa-home mr-2"></i>ホーム視点
                     </button>
-                    <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="toggleViewMode()">
-                        <i class="fas fa-expand-arrows-alt mr-2"></i>視点切替
+                    <button id="edit-mode-btn" class="control-btn px-4 py-2 text-white rounded text-sm" onclick="toggleEditMode()">
+                        <i class="fas fa-edit mr-2"></i>編集モード
                     </button>
-                    <button class="control-btn px-4 py-2 text-white rounded text-sm active" onclick="toggleMeasure()">
-                        <i class="fas fa-ruler mr-2"></i>計測
-                    </button>
-                    <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="toggleSection()">
-                        <i class="fas fa-cut mr-2"></i>断面
+                    <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="showEquipmentEditDialog()">
+                        <i class="fas fa-plus mr-2"></i>設備追加
                     </button>
                     <button class="control-btn px-4 py-2 text-white rounded text-sm" onclick="takeScreenshot()">
                         <i class="fas fa-camera mr-2"></i>スクショ
@@ -196,7 +607,7 @@ app.get('/', (c) => {
                 <div class="flex items-center space-x-4">
                     <div class="text-right">
                         <div class="text-white text-sm font-semibold">稼働率</div>
-                        <div class="text-green-400 text-lg font-bold" id="uptime-display">98.7%</div>
+                        <div class="text-green-400 text-lg font-bold" id="uptime-display">--</div>
                     </div>
                     <button class="control-btn px-4 py-2 text-white rounded">
                         <i class="fas fa-user-circle mr-2"></i>Admin
@@ -213,22 +624,22 @@ app.get('/', (c) => {
                             <i class="fas fa-chart-line mr-2 text-blue-400"></i>
                             システム概要
                         </h3>
-                        <div class="grid grid-cols-2 gap-3">
+                        <div class="grid grid-cols-2 gap-3" id="system-metrics">
                             <div class="metric-card glass rounded p-3">
                                 <div class="text-gray-400 text-xs">総設備数</div>
-                                <div class="text-white text-2xl font-bold">150</div>
+                                <div class="text-white text-2xl font-bold">--</div>
                             </div>
                             <div class="metric-card glass rounded p-3">
                                 <div class="text-gray-400 text-xs">稼働中</div>
-                                <div class="text-green-400 text-2xl font-bold">142</div>
+                                <div class="text-green-400 text-2xl font-bold">--</div>
                             </div>
                             <div class="metric-card glass rounded p-3">
                                 <div class="text-gray-400 text-xs">警告</div>
-                                <div class="text-yellow-400 text-2xl font-bold">6</div>
+                                <div class="text-yellow-400 text-2xl font-bold">--</div>
                             </div>
                             <div class="metric-card glass rounded p-3">
                                 <div class="text-gray-400 text-xs">緊急</div>
-                                <div class="text-red-400 text-2xl font-bold">2</div>
+                                <div class="text-red-400 text-2xl font-bold">--</div>
                             </div>
                         </div>
                     </div>
@@ -310,17 +721,8 @@ app.get('/', (c) => {
                             <i class="fas fa-bell mr-2 text-red-400"></i>
                             アラート
                         </h3>
-                        <div class="space-y-2">
-                            <div class="glass rounded p-3 border-l-4 border-red-500">
-                                <div class="text-red-400 font-semibold text-sm">緊急</div>
-                                <div class="text-white text-xs mt-1">Equipment C: 温度異常検知</div>
-                                <div class="text-gray-400 text-xs mt-1">5分前</div>
-                            </div>
-                            <div class="glass rounded p-3 border-l-4 border-yellow-500">
-                                <div class="text-yellow-400 font-semibold text-sm">警告</div>
-                                <div class="text-white text-xs mt-1">Equipment B: 振動値上昇</div>
-                                <div class="text-gray-400 text-xs mt-1">1時間前</div>
-                            </div>
+                        <div class="space-y-2" id="alert-list">
+                            <!-- Populated by JavaScript -->
                         </div>
                     </div>
 

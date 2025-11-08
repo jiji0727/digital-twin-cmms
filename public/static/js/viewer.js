@@ -17,7 +17,13 @@ const state = {
     raycaster: new THREE.Raycaster(),
     mouse: new THREE.Vector2(),
     markers: [],
-    clock: new THREE.Clock()
+    clock: new THREE.Clock(),
+    editMode: false,
+    isPlacingEquipment: false,
+    equipmentToPlace: null,
+    draggedMarker: null,
+    isDragging: false,
+    modelLoaded: false
 };
 
 // Initialize the 3D viewer with LCC SDK
@@ -122,6 +128,12 @@ async function initViewer() {
             console.log('✅ LCC Big Mirror model loaded successfully:', mesh);
             updateLoadingProgress(90);
             
+            // Store mesh reference in state
+            if (state.lccObject) {
+                state.lccObject.mesh = mesh;
+            }
+            state.modelLoaded = true;
+            
             // Auto-focus on the model
             const box = new THREE.Box3().setFromObject(mesh);
             const center = box.getCenter(new THREE.Vector3());
@@ -140,6 +152,7 @@ async function initViewer() {
             state.controls.update();
             
             console.log('📐 Model bounds:', { center, size, maxDim });
+            console.log('🎯 Model ready for interaction');
         }, 
         (percent) => {
             const progress = 40 + (percent * 50); // 40% to 90%
@@ -163,6 +176,8 @@ async function initViewer() {
     // Event listeners
     window.addEventListener('resize', onWindowResize);
     canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('click', onClick);
     updateLoadingProgress(92);
 
@@ -212,18 +227,128 @@ function onMouseMove(event) {
     const rect = state.renderer.domElement.getBoundingClientRect();
     state.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     state.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    // Handle marker dragging
+    if (state.isDragging && state.draggedMarker && state.modelLoaded && state.lccObject && state.lccObject.mesh) {
+        state.raycaster.setFromCamera(state.mouse, state.camera);
+        const intersects = state.raycaster.intersectObject(state.lccObject.mesh, true);
+        
+        if (intersects.length > 0) {
+            const point = intersects[0].point;
+            state.draggedMarker.position.copy(point);
+        }
+    }
+}
+
+function onMouseDown(event) {
+    if (event.button !== 0) return; // Only left click
+    
+    state.raycaster.setFromCamera(state.mouse, state.camera);
+    const intersects = state.raycaster.intersectObjects(state.markers);
+    
+    if (intersects.length > 0 && state.editMode) {
+        const marker = intersects[0].object;
+        state.draggedMarker = marker;
+        state.isDragging = true;
+        
+        if (state.controls) {
+            state.controls.enabled = false;
+        }
+        
+        document.getElementById('viewer-canvas').style.cursor = 'grabbing';
+    }
+}
+
+function onMouseUp(event) {
+    if (state.isDragging && state.draggedMarker) {
+        const equipmentId = state.draggedMarker.userData.equipmentId;
+        const newPosition = state.draggedMarker.position.clone();
+        
+        updateEquipmentPosition(equipmentId, newPosition);
+        
+        state.isDragging = false;
+        state.draggedMarker = null;
+        
+        if (state.controls && !state.isPlacingEquipment) {
+            state.controls.enabled = !state.editMode;
+        }
+        
+        document.getElementById('viewer-canvas').style.cursor = state.editMode ? 'pointer' : 'default';
+    }
 }
 
 function onClick(event) {
     state.raycaster.setFromCamera(state.mouse, state.camera);
     
-    const intersects = state.raycaster.intersectObjects(state.markers);
-    if (intersects.length > 0) {
-        const marker = intersects[0].object;
+    // If in equipment placement mode
+    if (state.isPlacingEquipment && state.equipmentToPlace) {
+        placeEquipmentAtClick();
+        return;
+    }
+    
+    // Check if clicking on a marker
+    const markerIntersects = state.raycaster.intersectObjects(state.markers);
+    if (markerIntersects.length > 0) {
+        const marker = markerIntersects[0].object;
         if (marker.userData.equipmentId) {
-            window.selectEquipment(marker.userData.equipmentId);
+            if (state.editMode) {
+                // In edit mode, prepare to drag marker
+                state.draggedMarker = marker;
+            } else {
+                // In normal mode, select equipment
+                window.selectEquipment(marker.userData.equipmentId);
+            }
+        }
+        return;
+    }
+    
+    // If edit mode and clicked on model surface
+    if (state.editMode && state.modelLoaded && state.lccObject && state.lccObject.mesh) {
+        const modelIntersects = state.raycaster.intersectObject(state.lccObject.mesh, true);
+        if (modelIntersects.length > 0) {
+            const point = modelIntersects[0].point;
+            console.log('🎯 Clicked on model at:', point);
+            showPositionInfo(point);
         }
     }
+}
+
+function placeEquipmentAtClick() {
+    if (!state.modelLoaded || !state.lccObject || !state.lccObject.mesh) {
+        showNotification('モデルの読み込みが完了していません。しばらくお待ちください...', 'warning');
+        return;
+    }
+    
+    const intersects = state.raycaster.intersectObject(state.lccObject.mesh, true);
+    if (intersects.length > 0) {
+        const point = intersects[0].point;
+        console.log('📍 Placing equipment at:', point);
+        
+        if (state.equipmentToPlace.id) {
+            // Update existing equipment position
+            updateEquipmentPosition(state.equipmentToPlace.id, point);
+        } else {
+            // Create new equipment at this position
+            state.equipmentToPlace.location_x = point.x;
+            state.equipmentToPlace.location_y = point.y;
+            state.equipmentToPlace.location_z = point.z;
+            createNewEquipment(state.equipmentToPlace);
+        }
+        
+        exitPlacementMode();
+    } else {
+        showNotification('モデル表面をクリックしてください', 'warning');
+    }
+}
+
+function showPositionInfo(point) {
+    const info = `
+        位置情報:
+        X: ${point.x.toFixed(2)}
+        Y: ${point.y.toFixed(2)}
+        Z: ${point.z.toFixed(2)}
+    `;
+    console.log(info);
 }
 
 // CMMS Data Loading
@@ -257,18 +382,24 @@ async function loadCMMSData() {
 
 function renderEquipmentList(equipment) {
     const list = document.getElementById('equipment-list');
+    if (!equipment || equipment.length === 0) {
+        list.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">設備データがありません</div>';
+        return;
+    }
     list.innerHTML = equipment.map(eq => `
-        <div class="glass rounded p-3 cursor-pointer hover:bg-white hover:bg-opacity-10 transition" 
-             onclick="selectEquipment(${eq.id})">
+        <div class="glass rounded p-3 hover:bg-white hover:bg-opacity-10 transition">
             <div class="flex items-center justify-between">
-                <div class="flex items-center">
+                <div class="flex items-center cursor-pointer flex-1" onclick="selectEquipment(${eq.id})">
                     <i class="fas fa-cog mr-2 status-${eq.status}"></i>
                     <span class="text-white text-sm font-medium">${eq.name}</span>
                 </div>
-                <i class="fas fa-chevron-right text-gray-400 text-xs"></i>
+                <button onclick="showEquipmentEditDialog(${eq.id}); event.stopPropagation();" 
+                        class="text-blue-400 hover:text-blue-300 ml-2 p-1">
+                    <i class="fas fa-edit"></i>
+                </button>
             </div>
             <div class="text-xs text-gray-400 mt-1">
-                最終保守: ${eq.lastMaintenance}
+                ${eq.type} | ${eq.last_maintenance || '未実施'}
             </div>
         </div>
     `).join('');
@@ -276,21 +407,27 @@ function renderEquipmentList(equipment) {
 
 function renderMaintenanceList(maintenance) {
     const list = document.getElementById('maintenance-list');
-    list.innerHTML = maintenance.map(m => {
+    if (!maintenance || maintenance.length === 0) {
+        list.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">保守計画がありません</div>';
+        return;
+    }
+    list.innerHTML = maintenance.slice(0, 10).map(m => {
         const statusColors = {
             'scheduled': 'blue',
             'in-progress': 'yellow',
-            'urgent': 'red'
+            'completed': 'green',
+            'overdue': 'red'
         };
         const color = statusColors[m.status] || 'gray';
         
         return `
             <div class="glass rounded p-3">
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-${color}-400 text-xs font-semibold uppercase">${m.type}</span>
-                    <span class="text-xs text-gray-400">${m.scheduledDate}</span>
+                    <span class="text-${color}-400 text-xs font-semibold uppercase">${m.status}</span>
+                    <span class="text-xs text-gray-400">${m.next_scheduled ? new Date(m.next_scheduled).toLocaleDateString('ja-JP') : '-'}</span>
                 </div>
-                <div class="text-white text-sm">Equipment ID: ${m.equipmentId}</div>
+                <div class="text-white text-sm font-medium">${m.title}</div>
+                <div class="text-xs text-gray-400 mt-1">${m.equipment_name || 'Equipment #' + m.equipment_id}</div>
             </div>
         `;
     }).join('');
@@ -298,35 +435,83 @@ function renderMaintenanceList(maintenance) {
 
 function renderWorkOrdersList(workOrders) {
     const list = document.getElementById('workorder-list');
-    list.innerHTML = workOrders.map(wo => {
+    if (!workOrders || workOrders.length === 0) {
+        list.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">作業指示がありません</div>';
+        return;
+    }
+    list.innerHTML = workOrders.slice(0, 10).map(wo => {
         const priorityColors = {
+            'critical': 'red',
             'high': 'red',
             'medium': 'yellow',
             'low': 'green'
         };
-        const color = priorityColors[wo.priority] || 'gray';
+        const statusColors = {
+            'pending': 'gray',
+            'in-progress': 'blue',
+            'completed': 'green'
+        };
+        const priorityColor = priorityColors[wo.priority] || 'gray';
+        const statusColor = statusColors[wo.status] || 'gray';
         
         return `
             <div class="glass rounded p-3">
                 <div class="flex items-center justify-between mb-2">
                     <span class="text-white text-sm font-medium">${wo.title}</span>
-                    <span class="px-2 py-1 rounded text-xs bg-${color}-500 bg-opacity-20 text-${color}-400">
+                    <span class="px-2 py-1 rounded text-xs bg-${priorityColor}-500 bg-opacity-20 text-${priorityColor}-400">
                         ${wo.priority}
                     </span>
                 </div>
-                <div class="text-xs text-gray-400">担当: ${wo.assignedTo}</div>
-                <div class="text-xs text-gray-400">期限: ${wo.dueDate}</div>
+                <div class="text-xs text-${statusColor}-400 mb-1">${wo.status}</div>
+                <div class="text-xs text-gray-400">担当: ${wo.assigned_to || '未割当'}</div>
+                <div class="text-xs text-gray-400">期限: ${wo.scheduled_date ? new Date(wo.scheduled_date).toLocaleDateString('ja-JP') : '-'}</div>
             </div>
         `;
     }).join('');
 }
 
 function updateAnalyticsDashboard(analytics) {
-    document.getElementById('uptime-display').textContent = analytics.uptime + '%';
+    console.log('📊 Analytics data:', analytics);
+    
+    // Update uptime display
+    if (analytics.uptime !== undefined) {
+        document.getElementById('uptime-display').textContent = analytics.uptime.toFixed(1) + '%';
+    }
+    
+    // Update system metrics
+    const metricsContainer = document.getElementById('system-metrics');
+    if (analytics.equipment && metricsContainer) {
+        metricsContainer.innerHTML = `
+            <div class="metric-card glass rounded p-3">
+                <div class="text-gray-400 text-xs">総設備数</div>
+                <div class="text-white text-2xl font-bold">${analytics.equipment.total || 0}</div>
+            </div>
+            <div class="metric-card glass rounded p-3">
+                <div class="text-gray-400 text-xs">稼働中</div>
+                <div class="text-green-400 text-2xl font-bold">${analytics.equipment.operational || 0}</div>
+            </div>
+            <div class="metric-card glass rounded p-3">
+                <div class="text-gray-400 text-xs">警告</div>
+                <div class="text-yellow-400 text-2xl font-bold">${analytics.equipment.warning || 0}</div>
+            </div>
+            <div class="metric-card glass rounded p-3">
+                <div class="text-gray-400 text-xs">緊急</div>
+                <div class="text-red-400 text-2xl font-bold">${analytics.equipment.critical || 0}</div>
+            </div>
+        `;
+    }
+    
+    // Update alerts list with recent critical events
+    loadRecentAlerts();
 }
 
 function createEquipmentMarkers(equipment) {
     console.log('🎯 Creating equipment markers...');
+    
+    if (!equipment || equipment.length === 0) {
+        console.warn('⚠️ No equipment data to create markers');
+        return;
+    }
     
     equipment.forEach(eq => {
         const geometry = new THREE.SphereGeometry(0.8, 16, 16);
@@ -341,7 +526,11 @@ function createEquipmentMarkers(equipment) {
         });
         
         const marker = new THREE.Mesh(geometry, material);
-        marker.position.set(eq.location.x, eq.location.y, eq.location.z);
+        marker.position.set(
+            parseFloat(eq.location_x) || 0, 
+            parseFloat(eq.location_y) || 0, 
+            parseFloat(eq.location_z) || 0
+        );
         marker.userData = { equipmentId: eq.id, equipment: eq };
         marker.name = `equipment-marker-${eq.id}`;
         marker.castShadow = true;
@@ -473,19 +662,34 @@ function showSelectionPanel(equipment) {
                 <div class="text-white font-semibold">${equipment.name}</div>
             </div>
             <div>
+                <div class="text-gray-400 text-xs">タイプ</div>
+                <div class="text-white text-sm">${equipment.type}</div>
+            </div>
+            <div>
                 <div class="text-gray-400 text-xs">ステータス</div>
                 <div class="status-${equipment.status} font-semibold capitalize">${equipment.status}</div>
             </div>
             <div>
                 <div class="text-gray-400 text-xs">最終保守日</div>
-                <div class="text-white">${equipment.lastMaintenance}</div>
+                <div class="text-white">${equipment.last_maintenance || '未実施'}</div>
+            </div>
+            <div>
+                <div class="text-gray-400 text-xs">次回保守予定</div>
+                <div class="text-white">${equipment.next_maintenance || '未定'}</div>
             </div>
             <div>
                 <div class="text-gray-400 text-xs">位置</div>
-                <div class="text-white text-sm">X: ${equipment.location.x}, Y: ${equipment.location.y}, Z: ${equipment.location.z}</div>
+                <div class="text-white text-sm">X: ${equipment.location_x}, Y: ${equipment.location_y}, Z: ${equipment.location_z}</div>
             </div>
+            ${equipment.description ? `
+            <div>
+                <div class="text-gray-400 text-xs">説明</div>
+                <div class="text-white text-sm">${equipment.description}</div>
+            </div>
+            ` : ''}
             <div class="pt-2 border-t border-gray-600">
-                <button class="w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition">
+                <button class="w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition"
+                        onclick="createMaintenancePlan(${equipment.id})">
                     <i class="fas fa-wrench mr-2"></i>保守計画を作成
                 </button>
             </div>
@@ -495,9 +699,387 @@ function showSelectionPanel(equipment) {
     panel.classList.remove('hidden');
 }
 
+// Load recent alerts from analytics events
+async function loadRecentAlerts() {
+    try {
+        const response = await axios.get('/api/analytics/events?limit=10');
+        const events = response.data;
+        
+        const alertList = document.getElementById('alert-list');
+        if (!alertList) return;
+        
+        const criticalEvents = events.filter(e => e.severity === 'critical' || e.severity === 'warning');
+        
+        if (criticalEvents.length === 0) {
+            alertList.innerHTML = '<div class="text-gray-400 text-sm text-center py-4">アラートはありません</div>';
+            return;
+        }
+        
+        alertList.innerHTML = criticalEvents.slice(0, 5).map(event => {
+            const borderColor = event.severity === 'critical' ? 'red' : 'yellow';
+            const textColor = event.severity === 'critical' ? 'red' : 'yellow';
+            const timeAgo = getTimeAgo(new Date(event.timestamp));
+            
+            return `
+                <div class="glass rounded p-3 border-l-4 border-${borderColor}-500">
+                    <div class="text-${textColor}-400 font-semibold text-sm">${event.severity === 'critical' ? '緊急' : '警告'}</div>
+                    <div class="text-white text-xs mt-1">${event.equipment_name || 'System'}: ${event.event_type}</div>
+                    <div class="text-gray-400 text-xs mt-1">${timeAgo}</div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error loading alerts:', error);
+    }
+}
+
+function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return `${seconds}秒前`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}分前`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}時間前`;
+    const days = Math.floor(hours / 24);
+    return `${days}日前`;
+}
+
+window.createMaintenancePlan = function(equipmentId) {
+    alert(`設備ID: ${equipmentId}の保守計画作成機能は開発中です`);
+}
+
 window.closeSelection = function() {
     document.getElementById('selection-panel').classList.add('hidden');
     state.selectedEquipment = null;
+}
+
+// ============================================
+// Equipment Position Editing Functions
+// ============================================
+
+// Toggle edit mode
+window.toggleEditMode = function() {
+    // Check if model is loaded
+    if (!state.modelLoaded) {
+        showNotification('モデルの読み込みが完了するまでお待ちください...', 'warning');
+        return;
+    }
+    
+    state.editMode = !state.editMode;
+    
+    const btn = document.getElementById('edit-mode-btn');
+    if (btn) {
+        if (state.editMode) {
+            btn.classList.add('active');
+            btn.innerHTML = '<i class="fas fa-edit mr-2"></i>編集モード: ON';
+            showNotification('編集モードが有効になりました。設備をクリックして移動できます。', 'info');
+        } else {
+            btn.classList.remove('active');
+            btn.innerHTML = '<i class="fas fa-edit mr-2"></i>編集モード';
+            exitPlacementMode();
+            showNotification('編集モードが無効になりました', 'info');
+        }
+    }
+    
+    // Update controls
+    if (state.controls) {
+        state.controls.enabled = !state.editMode || !state.isPlacingEquipment;
+    }
+}
+
+// Enter equipment placement mode
+window.startPlacingEquipment = function(equipment = null) {
+    // Check if model is loaded
+    if (!state.modelLoaded) {
+        showNotification('モデルの読み込みが完了するまでお待ちください...', 'warning');
+        return;
+    }
+    
+    state.isPlacingEquipment = true;
+    state.equipmentToPlace = equipment || {
+        name: '新規設備',
+        type: 'Other',
+        status: 'operational',
+        description: ''
+    };
+    
+    if (state.controls) {
+        state.controls.enabled = false;
+    }
+    
+    showNotification('モデル表面をクリックして設備位置を指定してください', 'info');
+    
+    // Change cursor
+    document.getElementById('viewer-canvas').style.cursor = 'crosshair';
+}
+
+// Exit placement mode
+function exitPlacementMode() {
+    state.isPlacingEquipment = false;
+    state.equipmentToPlace = null;
+    
+    if (state.controls && !state.editMode) {
+        state.controls.enabled = true;
+    }
+    
+    document.getElementById('viewer-canvas').style.cursor = 'default';
+}
+
+// Update equipment position
+async function updateEquipmentPosition(equipmentId, newPosition) {
+    try {
+        const equipment = state.equipment.find(eq => eq.id === equipmentId);
+        if (!equipment) return;
+        
+        const updatedData = {
+            ...equipment,
+            location_x: newPosition.x,
+            location_y: newPosition.y,
+            location_z: newPosition.z
+        };
+        
+        const response = await axios.put(`/api/equipment/${equipmentId}`, updatedData);
+        
+        if (response.status === 200) {
+            // Update local state
+            Object.assign(equipment, updatedData);
+            
+            // Update marker position
+            const marker = state.markers.find(m => m.userData.equipmentId === equipmentId);
+            if (marker) {
+                marker.position.set(newPosition.x, newPosition.y, newPosition.z);
+            }
+            
+            showNotification(`${equipment.name}の位置を更新しました`, 'success');
+            console.log('✅ Equipment position updated:', equipment);
+        }
+    } catch (error) {
+        console.error('Error updating equipment position:', error);
+        showNotification('位置の更新に失敗しました', 'error');
+    }
+}
+
+// Create new equipment
+async function createNewEquipment(equipmentData) {
+    try {
+        const response = await axios.post('/api/equipment', equipmentData);
+        
+        if (response.status === 201) {
+            const newEquipment = response.data;
+            state.equipment.push(newEquipment);
+            
+            // Create marker for new equipment
+            createEquipmentMarkers([newEquipment]);
+            
+            // Refresh equipment list
+            renderEquipmentList(state.equipment);
+            
+            showNotification(`${newEquipment.name}を作成しました`, 'success');
+            console.log('✅ Equipment created:', newEquipment);
+        }
+    } catch (error) {
+        console.error('Error creating equipment:', error);
+        showNotification('設備の作成に失敗しました', 'error');
+    }
+}
+
+// Show equipment edit dialog
+window.showEquipmentEditDialog = function(equipmentId = null) {
+    const equipment = equipmentId ? state.equipment.find(eq => eq.id === equipmentId) : null;
+    
+    const dialogHTML = `
+        <div id="equipment-dialog" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="panel rounded-lg p-6 max-w-md w-full mx-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-white text-xl font-bold">
+                        ${equipment ? '設備編集' : '新規設備作成'}
+                    </h3>
+                    <button onclick="closeEquipmentDialog()" class="text-gray-400 hover:text-white">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">設備名</label>
+                        <input type="text" id="eq-name" value="${equipment?.name || ''}" 
+                               class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">タイプ</label>
+                        <select id="eq-type" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                            <option value="HVAC" ${equipment?.type === 'HVAC' ? 'selected' : ''}>HVAC</option>
+                            <option value="Electrical" ${equipment?.type === 'Electrical' ? 'selected' : ''}>Electrical</option>
+                            <option value="Plumbing" ${equipment?.type === 'Plumbing' ? 'selected' : ''}>Plumbing</option>
+                            <option value="Safety" ${equipment?.type === 'Safety' ? 'selected' : ''}>Safety</option>
+                            <option value="Security" ${equipment?.type === 'Security' ? 'selected' : ''}>Security</option>
+                            <option value="Transportation" ${equipment?.type === 'Transportation' ? 'selected' : ''}>Transportation</option>
+                            <option value="Other" ${equipment?.type === 'Other' ? 'selected' : ''}>Other</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">ステータス</label>
+                        <select id="eq-status" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                            <option value="operational" ${equipment?.status === 'operational' ? 'selected' : ''}>Operational</option>
+                            <option value="warning" ${equipment?.status === 'warning' ? 'selected' : ''}>Warning</option>
+                            <option value="critical" ${equipment?.status === 'critical' ? 'selected' : ''}>Critical</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">説明</label>
+                        <textarea id="eq-description" rows="3" 
+                                  class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">${equipment?.description || ''}</textarea>
+                    </div>
+                    
+                    <div class="glass rounded p-3">
+                        <div class="text-gray-300 text-sm mb-2">位置情報</div>
+                        ${equipment ? `
+                            <div class="text-white text-sm">
+                                X: ${equipment.location_x.toFixed(2)}, 
+                                Y: ${equipment.location_y.toFixed(2)}, 
+                                Z: ${equipment.location_z.toFixed(2)}
+                            </div>
+                            <button onclick="startRepositioning(${equipment.id})" 
+                                    class="mt-2 w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition">
+                                <i class="fas fa-map-marker-alt mr-2"></i>位置を変更
+                            </button>
+                        ` : `
+                            <button onclick="startPositionSelection()" 
+                                    class="w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition">
+                                <i class="fas fa-map-marker-alt mr-2"></i>3D空間で位置を指定
+                            </button>
+                        `}
+                    </div>
+                    
+                    <div class="flex space-x-3">
+                        <button onclick="saveEquipment(${equipment?.id || null})" 
+                                class="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-2 font-semibold transition">
+                            <i class="fas fa-save mr-2"></i>保存
+                        </button>
+                        <button onclick="closeEquipmentDialog()" 
+                                class="flex-1 glass text-white rounded px-4 py-2 font-semibold hover:bg-white hover:bg-opacity-20 transition">
+                            キャンセル
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', dialogHTML);
+}
+
+window.closeEquipmentDialog = function() {
+    const dialog = document.getElementById('equipment-dialog');
+    if (dialog) dialog.remove();
+}
+
+window.startRepositioning = function(equipmentId) {
+    const equipment = state.equipment.find(eq => eq.id === equipmentId);
+    if (equipment) {
+        closeEquipmentDialog();
+        state.editMode = true;
+        startPlacingEquipment(equipment);
+    }
+}
+
+window.startPositionSelection = function() {
+    const name = document.getElementById('eq-name').value;
+    const type = document.getElementById('eq-type').value;
+    const status = document.getElementById('eq-status').value;
+    const description = document.getElementById('eq-description').value;
+    
+    if (!name) {
+        alert('設備名を入力してください');
+        return;
+    }
+    
+    closeEquipmentDialog();
+    state.editMode = true;
+    startPlacingEquipment({
+        name,
+        type,
+        status,
+        description,
+        installation_date: new Date().toISOString().split('T')[0]
+    });
+}
+
+window.saveEquipment = async function(equipmentId) {
+    const name = document.getElementById('eq-name').value;
+    const type = document.getElementById('eq-type').value;
+    const status = document.getElementById('eq-status').value;
+    const description = document.getElementById('eq-description').value;
+    
+    if (!name) {
+        alert('設備名を入力してください');
+        return;
+    }
+    
+    if (equipmentId) {
+        // Update existing equipment
+        const equipment = state.equipment.find(eq => eq.id === equipmentId);
+        if (equipment) {
+            try {
+                const updatedData = {
+                    ...equipment,
+                    name,
+                    type,
+                    status,
+                    description
+                };
+                
+                const response = await axios.put(`/api/equipment/${equipmentId}`, updatedData);
+                
+                if (response.status === 200) {
+                    Object.assign(equipment, updatedData);
+                    renderEquipmentList(state.equipment);
+                    
+                    // Update marker color based on status
+                    const marker = state.markers.find(m => m.userData.equipmentId === equipmentId);
+                    if (marker) {
+                        const color = status === 'operational' ? 0x10b981 : 
+                                     status === 'warning' ? 0xf59e0b : 0xef4444;
+                        marker.material.color.setHex(color);
+                        marker.material.emissive.setHex(color);
+                    }
+                    
+                    closeEquipmentDialog();
+                    showNotification('設備を更新しました', 'success');
+                }
+            } catch (error) {
+                console.error('Error updating equipment:', error);
+                showNotification('更新に失敗しました', 'error');
+            }
+        }
+    } else {
+        alert('位置を設定してから保存してください');
+    }
+}
+
+// Notification system
+function showNotification(message, type = 'info') {
+    const colors = {
+        info: 'bg-blue-600',
+        success: 'bg-green-600',
+        error: 'bg-red-600',
+        warning: 'bg-yellow-600'
+    };
+    
+    const notification = document.createElement('div');
+    notification.className = `fixed top-20 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-fade-in`;
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transition = 'opacity 0.3s';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
 // Loading screen functions

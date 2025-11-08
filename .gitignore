@@ -31,3 +31,7 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+# large model files (hosted on GitHub Releases)
+public/models/
+dist/models/
