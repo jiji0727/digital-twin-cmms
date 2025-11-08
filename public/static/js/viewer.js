@@ -71,19 +71,8 @@ async function initViewer() {
     state.controls.minDistance = 5;
     state.controls.maxDistance = 200;
     
-    // Configure mouse buttons:
-    // RIGHT click (2) for rotate
-    // MIDDLE click (1) for pan (horizontal movement)
-    // Scroll wheel for zoom
-    // Left click (0) reserved for marker interaction
-    state.controls.mouseButtons = {
-        LEFT: null,  // Disable left click for orbit controls
-        MIDDLE: THREE.MOUSE.PAN,  // Middle click for pan (horizontal movement)
-        RIGHT: THREE.MOUSE.ROTATE   // Right click for rotate
-    };
-    
-    // Enable pan with middle mouse button
-    state.controls.enablePan = true;
+    // Standard controls (left drag rotate, right drag pan, wheel zoom)
+    // Will be dynamically enabled/disabled based on edit mode and dragging state
     
     updateLoadingProgress(25);
 
@@ -277,9 +266,10 @@ function onMouseDown(event) {
         state.draggedMarker = marker;
         state.isDragging = true;
         
-        // Don't disable controls - allow camera movement with right/middle click
-        // Only prevent orbit controls from starting on THIS left click
-        event.stopPropagation();
+        // Disable controls while dragging marker
+        if (state.controls) {
+            state.controls.enabled = false;
+        }
         
         document.getElementById('viewer-canvas').style.cursor = 'grabbing';
     }
@@ -295,7 +285,11 @@ function onMouseUp(event) {
         state.isDragging = false;
         state.draggedMarker = null;
         
-        // Controls remain enabled for camera movement
+        // Re-enable controls after dragging
+        if (state.controls) {
+            state.controls.enabled = true;
+        }
+        
         document.getElementById('viewer-canvas').style.cursor = state.editMode ? 'pointer' : 'default';
     }
 }
