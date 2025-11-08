@@ -87,16 +87,18 @@ async function initViewer() {
     canvas.addEventListener('wheel', (event) => {
         event.preventDefault();
         
-        // Get camera forward direction
+        // Get camera forward direction (including vertical component)
+        // This is the direction the camera is actually looking at (screen center)
         const forward = new THREE.Vector3(
-            Math.sin(state.cameraYaw),
-            0,
-            Math.cos(state.cameraYaw)
+            Math.sin(state.cameraYaw) * Math.cos(state.cameraPitch),
+            Math.sin(state.cameraPitch),
+            Math.cos(state.cameraYaw) * Math.cos(state.cameraPitch)
         ).normalize();
         
         // Move camera forward or backward based on wheel delta (inverted)
         const moveDistance = -event.deltaY * state.moveSpeed;
         state.camera.position.x += forward.x * moveDistance;
+        state.camera.position.y += forward.y * moveDistance;
         state.camera.position.z += forward.z * moveDistance;
     }, { passive: false });
 
