@@ -427,7 +427,7 @@ window.submitFailureReport = async function() {
     const reporterName = document.getElementById('failure-reporter').value;
     
     if (!title || !description || !reporterName) {
-        alert('必須項目を入力してください');
+        showToast('必須項目を入力してください', 'error');
         return;
     }
     
@@ -440,15 +440,186 @@ window.submitFailureReport = async function() {
             description,
             symptoms,
             reporter_name: reporterName,
-            report_date: new Date().toISOString()
+            status: 'reported',
+            report_date: new Date().toISOString().split('T')[0]
         });
         
         closeDialog();
-        showNotification('故障報告を作成しました', 'success');
-        loadFailures();
+        showToast('故障報告を作成しました', 'success');
+        if (window.loadFailures) loadFailures();
     } catch (error) {
         console.error('Error creating failure report:', error);
-        showNotification('報告の作成に失敗しました', 'error');
+        showToast('報告の作成に失敗しました', 'error');
+    }
+};
+
+// View failure report details
+window.viewFailureReport = async function(id) {
+    try {
+        const response = await axios.get('/api/failures');
+        const failure = response.data.find(f => f.id === id);
+        
+        if (!failure) {
+            showToast('故障報告が見つかりません', 'error');
+            return;
+        }
+        
+        const statusOptions = ['reported', 'investigating', 'in_repair', 'resolved', 'closed'];
+        const severityColors = {
+            'critical': 'red',
+            'high': 'orange',
+            'medium': 'yellow',
+            'low': 'green'
+        };
+        
+        const dialog = 
+            '<div class="glass rounded-lg p-6 max-w-lg mx-auto">' +
+            '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+            '<i class="fas fa-exclamation-triangle mr-2 text-red-400"></i>' +
+            escapeHtml(failure.title || '故障報告') +
+            '</h3>' +
+            '<div class="space-y-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">説明</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(failure.description || '') + '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">ステータス</label>' +
+            '<select id="failure-status" class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+            statusOptions.map(s => '<option value="' + s + '" ' + (s === failure.status ? 'selected' : '') + '>' + s + '</option>').join('') +
+            '</select>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">重大度</label>' +
+            '<div class="text-' + (severityColors[failure.severity] || 'gray') + '-400 text-sm mt-1 font-semibold">' + 
+            escapeHtml(failure.severity || 'medium') + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="grid grid-cols-2 gap-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">故障タイプ</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(failure.failure_type || '-') + '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">報告者</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(failure.reporter_name || '-') + '</div>' +
+            '</div>' +
+            '</div>' +
+            (failure.symptoms ? '<div>' +
+            '<label class="text-gray-400 text-xs">症状</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(failure.symptoms) + '</div>' +
+            '</div>' : '') +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">担当者</label>' +
+            '<input type="text" id="failure-assigned" value="' + escapeHtml(failure.assigned_to || '') + '" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm" placeholder="担当者名">' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">根本原因</label>' +
+            '<textarea id="failure-root-cause" rows="2" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm" ' +
+            'placeholder="根本原因を記入">' + escapeHtml(failure.root_cause || '') + '</textarea>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">是正措置</label>' +
+            '<textarea id="failure-corrective-action" rows="2" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm" ' +
+            'placeholder="是正措置を記入">' + escapeHtml(failure.corrective_action || '') + '</textarea>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">報告日</label>' +
+            '<div class="text-white text-sm mt-1">' + formatDate(failure.report_date) + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="flex gap-2 mt-6">' +
+            '<button onclick="updateFailureReport(' + id + ')" ' +
+            'class="flex-1 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition">' +
+            '<i class="fas fa-save mr-2"></i>更新' +
+            '</button>' +
+            '<button onclick="createWorkOrderFromFailure(' + id + ')" ' +
+            'class="flex-1 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-400 rounded-lg transition">' +
+            '<i class="fas fa-wrench mr-2"></i>作業指示作成' +
+            '</button>' +
+            '<button onclick="closeDialog()" ' +
+            'class="px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+            '閉じる' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error loading failure report:', error);
+        showToast('故障報告の読み込みに失敗しました', 'error');
+    }
+};
+
+// Update failure report
+window.updateFailureReport = async function(id) {
+    try {
+        const status = document.getElementById('failure-status').value;
+        const assigned_to = document.getElementById('failure-assigned').value;
+        const root_cause = document.getElementById('failure-root-cause').value;
+        const corrective_action = document.getElementById('failure-corrective-action').value;
+        
+        await axios.put('/api/failures/' + id, {
+            status: status,
+            assigned_to: assigned_to || null,
+            root_cause: root_cause || null,
+            corrective_action: corrective_action || null,
+            resolved_date: status === 'resolved' || status === 'closed' ? new Date().toISOString().split('T')[0] : null
+        });
+        
+        showToast('故障報告を更新しました', 'success');
+        closeDialog();
+        
+        if (window.loadFailures) loadFailures();
+    } catch (error) {
+        console.error('Error updating failure report:', error);
+        showToast('故障報告の更新に失敗しました', 'error');
+    }
+};
+
+// Create work order from failure report
+window.createWorkOrderFromFailure = async function(failureId) {
+    try {
+        const response = await axios.get('/api/failures');
+        const failure = response.data.find(f => f.id === failureId);
+        
+        if (!failure) {
+            showToast('故障報告が見つかりません', 'error');
+            return;
+        }
+        
+        // Create work order
+        const woResponse = await axios.post('/api/workorders', {
+            title: '故障対応: ' + failure.title,
+            description: failure.description + '\n\n症状: ' + (failure.symptoms || ''),
+            priority: failure.severity === 'critical' ? 'critical' : 
+                     failure.severity === 'high' ? 'high' : 'medium',
+            equipment_id: failure.equipment_id,
+            assigned_to: failure.assigned_to || null,
+            status: 'pending',
+            type: 'corrective'
+        });
+        
+        // Update failure report with work order ID
+        await axios.put('/api/failures/' + failureId, {
+            work_order_id: woResponse.data.id,
+            status: 'in_repair'
+        });
+        
+        showToast('作業指示を作成しました', 'success');
+        closeDialog();
+        
+        // Open the new work order
+        if (window.viewWorkOrder) {
+            setTimeout(() => viewWorkOrder(woResponse.data.id), 500);
+        }
+    } catch (error) {
+        console.error('Error creating work order from failure:', error);
+        showToast('作業指示の作成に失敗しました', 'error');
     }
 };
 
@@ -2088,6 +2259,511 @@ window.showDocumentsForEquipment = function(equipmentId) {
 // Export functions
 window.showNotification = showNotification;
 window.showDialog = showDialog;
+
+// ============================================
+// Checklist Management Functions
+// ============================================
+
+let currentTemplateItems = [];
+
+// View checklist template details
+window.viewChecklistTemplate = async function(id) {
+    try {
+        const [templateRes, itemsRes] = await Promise.all([
+            axios.get('/api/checklists/templates'),
+            axios.get('/api/checklists/items/' + id)
+        ]);
+        
+        const template = templateRes.data.find(t => t.id === id);
+        const items = itemsRes.data;
+        currentTemplateItems = items;
+        
+        const dialog = 
+            '<div class="glass rounded-lg p-6 max-w-2xl mx-auto">' +
+            '<h3 class="text-white text-lg font-bold mb-4 flex items-center justify-between">' +
+            '<span><i class="fas fa-clipboard-check mr-2 text-blue-400"></i>' + escapeHtml(template.name) + '</span>' +
+            '<button onclick="executeChecklistFromTemplate(' + id + ')" ' +
+            'class="px-3 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded text-sm transition">' +
+            '<i class="fas fa-play mr-1"></i>点検実施' +
+            '</button>' +
+            '</h3>' +
+            '<div class="space-y-3 mb-4">' +
+            '<div class="grid grid-cols-2 gap-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">設備タイプ</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(template.equipment_type || '-') + '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">頻度</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(template.frequency || '-') + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">説明</label>' +
+            '<div class="text-white text-sm mt-1">' + escapeHtml(template.description || '-') + '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="border-t border-gray-700 pt-3">' +
+            '<div class="flex items-center justify-between mb-2">' +
+            '<h4 class="text-white font-semibold text-sm">点検項目 (' + items.length + ')</h4>' +
+            '<button onclick="addChecklistItem(' + id + ')" ' +
+            'class="px-2 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded text-xs transition">' +
+            '<i class="fas fa-plus mr-1"></i>項目追加' +
+            '</button>' +
+            '</div>' +
+            '<div class="space-y-2 max-h-64 overflow-y-auto">' +
+            items.map((item, idx) => 
+                '<div class="glass rounded p-2">' +
+                '<div class="flex items-start justify-between">' +
+                '<div class="flex-1">' +
+                '<span class="text-gray-400 text-xs">' + (idx + 1) + '. </span>' +
+                '<span class="text-white text-sm">' + escapeHtml(item.item_text) + '</span>' +
+                '</div>' +
+                '<div class="flex items-center gap-1">' +
+                '<span class="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">' + item.check_type + '</span>' +
+                '<button onclick="deleteChecklistItem(' + item.id + ', ' + id + ')" ' +
+                'class="text-red-400 hover:text-red-300 text-xs p-1">' +
+                '<i class="fas fa-trash"></i>' +
+                '</button>' +
+                '</div>' +
+                '</div>' +
+                (item.category ? '<div class="text-gray-400 text-xs mt-1">カテゴリ: ' + escapeHtml(item.category) + '</div>' : '') +
+                '</div>'
+            ).join('') +
+            '</div>' +
+            '</div>' +
+            '<div class="flex gap-2 mt-4">' +
+            '<button onclick="closeDialog()" ' +
+            'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+            '閉じる' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error loading checklist template:', error);
+        showToast('テンプレートの読み込みに失敗しました', 'error');
+    }
+};
+
+// Create new checklist template
+window.createChecklistTemplate = function() {
+    const dialog = 
+        '<div class="glass rounded-lg p-6 max-w-lg mx-auto">' +
+        '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+        '<i class="fas fa-plus-circle mr-2 text-blue-400"></i>' +
+        '新規チェックリストテンプレート' +
+        '</h3>' +
+        '<div class="space-y-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">テンプレート名</label>' +
+        '<input type="text" id="new-template-name" placeholder="例: 月次点検チェックリスト" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">説明</label>' +
+        '<textarea id="new-template-description" rows="2" placeholder="テンプレートの説明" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm"></textarea>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">設備タイプ</label>' +
+        '<select id="new-template-type" class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '<option value="HVAC">HVAC</option>' +
+        '<option value="Electrical">電気</option>' +
+        '<option value="Plumbing">配管</option>' +
+        '<option value="Mechanical">機械</option>' +
+        '<option value="Other">その他</option>' +
+        '</select>' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">頻度</label>' +
+        '<select id="new-template-frequency" class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '<option value="daily">日次</option>' +
+        '<option value="weekly">週次</option>' +
+        '<option value="monthly" selected>月次</option>' +
+        '<option value="quarterly">四半期</option>' +
+        '<option value="yearly">年次</option>' +
+        '</select>' +
+        '</div>' +
+        '</div>' +
+        '</div>' +
+        '<div class="flex gap-2 mt-6">' +
+        '<button onclick="submitNewChecklistTemplate()" ' +
+        'class="flex-1 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition">' +
+        '<i class="fas fa-plus mr-2"></i>作成' +
+        '</button>' +
+        '<button onclick="closeDialog()" ' +
+        'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+        'キャンセル' +
+        '</button>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+};
+
+// Submit new checklist template
+window.submitNewChecklistTemplate = async function() {
+    try {
+        const name = document.getElementById('new-template-name').value;
+        const description = document.getElementById('new-template-description').value;
+        const equipment_type = document.getElementById('new-template-type').value;
+        const frequency = document.getElementById('new-template-frequency').value;
+        
+        if (!name) {
+            showToast('テンプレート名を入力してください', 'error');
+            return;
+        }
+        
+        const response = await axios.post('/api/checklists/templates', {
+            name: name,
+            description: description,
+            equipment_type: equipment_type,
+            frequency: frequency,
+            is_active: 1
+        });
+        
+        showToast('チェックリストテンプレートを作成しました', 'success');
+        closeDialog();
+        
+        // Reload checklist templates
+        if (window.loadChecklistTemplates) {
+            window.loadChecklistTemplates();
+        }
+        
+        // Open the new template to add items
+        setTimeout(() => viewChecklistTemplate(response.data.id), 500);
+    } catch (error) {
+        console.error('Error creating checklist template:', error);
+        showToast('テンプレートの作成に失敗しました', 'error');
+    }
+};
+
+// Add checklist item
+window.addChecklistItem = function(templateId) {
+    const dialog = 
+        '<div class="glass rounded-lg p-6 max-w-lg mx-auto">' +
+        '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+        '<i class="fas fa-plus mr-2 text-blue-400"></i>' +
+        '点検項目を追加' +
+        '</h3>' +
+        '<div class="space-y-3">' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">項目内容</label>' +
+        '<input type="text" id="new-item-text" placeholder="例: オイル漏れがないか確認" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">カテゴリ</label>' +
+        '<input type="text" id="new-item-category" placeholder="例: 外観点検" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '<div>' +
+        '<label class="text-gray-400 text-xs">チェック方式</label>' +
+        '<select id="new-item-type" class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '<option value="checkbox">チェックボックス</option>' +
+        '<option value="numeric">数値入力</option>' +
+        '<option value="text">テキスト入力</option>' +
+        '<option value="select">選択式</option>' +
+        '</select>' +
+        '</div>' +
+        '<div id="normal-range-container" style="display:none;">' +
+        '<label class="text-gray-400 text-xs">正常範囲（数値の場合）</label>' +
+        '<input type="text" id="new-item-range" placeholder="例: 20-30" ' +
+        'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+        '</div>' +
+        '</div>' +
+        '<div class="flex gap-2 mt-6">' +
+        '<button onclick="submitNewChecklistItem(' + templateId + ')" ' +
+        'class="flex-1 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition">' +
+        '<i class="fas fa-plus mr-2"></i>追加' +
+        '</button>' +
+        '<button onclick="closeDialog(); viewChecklistTemplate(' + templateId + ')" ' +
+        'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+        'キャンセル' +
+        '</button>' +
+        '</div>' +
+        '</div>';
+    
+    showDialog(dialog);
+    
+    // Show/hide normal range field based on type
+    document.getElementById('new-item-type').addEventListener('change', function() {
+        const rangeContainer = document.getElementById('normal-range-container');
+        rangeContainer.style.display = this.value === 'numeric' ? 'block' : 'none';
+    });
+};
+
+// Submit new checklist item
+window.submitNewChecklistItem = async function(templateId) {
+    try {
+        const item_text = document.getElementById('new-item-text').value;
+        const category = document.getElementById('new-item-category').value;
+        const check_type = document.getElementById('new-item-type').value;
+        const normal_range = document.getElementById('new-item-range') ? document.getElementById('new-item-range').value : null;
+        
+        if (!item_text) {
+            showToast('項目内容を入力してください', 'error');
+            return;
+        }
+        
+        await axios.post('/api/checklists/items', {
+            template_id: templateId,
+            item_text: item_text,
+            category: category || null,
+            check_type: check_type,
+            normal_range: normal_range || null,
+            is_required: 1,
+            alert_on_abnormal: 0,
+            item_order: currentTemplateItems.length
+        });
+        
+        showToast('点検項目を追加しました', 'success');
+        closeDialog();
+        
+        // Reload template view
+        viewChecklistTemplate(templateId);
+    } catch (error) {
+        console.error('Error adding checklist item:', error);
+        showToast('項目の追加に失敗しました', 'error');
+    }
+};
+
+// Delete checklist item
+window.deleteChecklistItem = async function(itemId, templateId) {
+    if (!confirm('この点検項目を削除しますか？')) return;
+    
+    try {
+        await axios.delete('/api/checklists/items/' + itemId);
+        showToast('点検項目を削除しました', 'success');
+        viewChecklistTemplate(templateId);
+    } catch (error) {
+        console.error('Error deleting checklist item:', error);
+        showToast('項目の削除に失敗しました', 'error');
+    }
+};
+
+// Execute checklist from template
+window.executeChecklistFromTemplate = async function(templateId) {
+    try {
+        // Get equipment list
+        const equipmentRes = await axios.get('/api/equipment');
+        const equipment = equipmentRes.data;
+        
+        const dialog = 
+            '<div class="glass rounded-lg p-6 max-w-md mx-auto">' +
+            '<h3 class="text-white text-lg font-bold mb-4 flex items-center">' +
+            '<i class="fas fa-play mr-2 text-green-400"></i>' +
+            '点検を開始' +
+            '</h3>' +
+            '<div class="space-y-3">' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">対象設備</label>' +
+            '<select id="exec-equipment" class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+            equipment.map(eq => '<option value="' + eq.id + '">' + escapeHtml(eq.name) + '</option>').join('') +
+            '</select>' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">実施者名</label>' +
+            '<input type="text" id="exec-executor" placeholder="実施者名を入力" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+            '</div>' +
+            '<div>' +
+            '<label class="text-gray-400 text-xs">実施日</label>' +
+            '<input type="date" id="exec-date" value="' + new Date().toISOString().split('T')[0] + '" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm">' +
+            '</div>' +
+            '</div>' +
+            '<div class="flex gap-2 mt-6">' +
+            '<button onclick="startChecklistExecution(' + templateId + ')" ' +
+            'class="flex-1 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition">' +
+            '<i class="fas fa-play mr-2"></i>開始' +
+            '</button>' +
+            '<button onclick="closeDialog()" ' +
+            'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+            'キャンセル' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error preparing checklist execution:', error);
+        showToast('点検準備に失敗しました', 'error');
+    }
+};
+
+// Start checklist execution
+window.startChecklistExecution = async function(templateId) {
+    try {
+        const equipment_id = parseInt(document.getElementById('exec-equipment').value);
+        const executor_name = document.getElementById('exec-executor').value;
+        const execution_date = document.getElementById('exec-date').value;
+        
+        if (!executor_name) {
+            showToast('実施者名を入力してください', 'error');
+            return;
+        }
+        
+        // Create execution
+        const response = await axios.post('/api/checklists/executions', {
+            template_id: templateId,
+            equipment_id: equipment_id,
+            executor_name: executor_name,
+            execution_date: execution_date,
+            status: 'in_progress'
+        });
+        
+        showToast('点検を開始しました', 'success');
+        closeDialog();
+        
+        // Show checklist execution UI
+        showChecklistExecutionUI(response.data.id, templateId);
+    } catch (error) {
+        console.error('Error starting checklist execution:', error);
+        showToast('点検の開始に失敗しました', 'error');
+    }
+};
+
+// Show checklist execution UI
+window.showChecklistExecutionUI = async function(executionId, templateId) {
+    try {
+        const [executionRes, itemsRes] = await Promise.all([
+            axios.get('/api/checklists/executions'),
+            axios.get('/api/checklists/items/' + templateId)
+        ]);
+        
+        const execution = executionRes.data.find(e => e.id === executionId);
+        const items = itemsRes.data;
+        
+        // Get existing results
+        const resultsRes = await axios.get('/api/checklists/results/' + executionId).catch(() => ({ data: [] }));
+        const existingResults = resultsRes.data;
+        
+        const dialog = 
+            '<div class="glass rounded-lg p-6 max-w-2xl mx-auto">' +
+            '<h3 class="text-white text-lg font-bold mb-4 flex items-center justify-between">' +
+            '<span><i class="fas fa-clipboard-check mr-2 text-green-400"></i>点検実施中</span>' +
+            '<span class="text-sm text-gray-400">実施者: ' + escapeHtml(execution.executor_name) + '</span>' +
+            '</h3>' +
+            '<div class="space-y-3 max-h-96 overflow-y-auto mb-4">' +
+            items.map((item, idx) => {
+                const existingResult = existingResults.find(r => r.item_id === item.id);
+                const checked = existingResult ? (existingResult.is_normal ? 'checked' : '') : '';
+                const value = existingResult ? existingResult.check_value : '';
+                
+                let inputHtml = '';
+                if (item.check_type === 'checkbox') {
+                    inputHtml = '<input type="checkbox" id="result-' + item.id + '" ' + checked + ' class="w-4 h-4">';
+                } else if (item.check_type === 'numeric') {
+                    inputHtml = '<input type="number" id="result-' + item.id + '" value="' + value + '" placeholder="数値を入力" class="w-full px-2 py-1 bg-gray-700 text-white rounded text-sm">';
+                } else if (item.check_type === 'text') {
+                    inputHtml = '<input type="text" id="result-' + item.id + '" value="' + value + '" placeholder="テキストを入力" class="w-full px-2 py-1 bg-gray-700 text-white rounded text-sm">';
+                } else {
+                    inputHtml = '<select id="result-' + item.id + '" class="w-full px-2 py-1 bg-gray-700 text-white rounded text-sm"><option value="OK">OK</option><option value="NG">NG</option></select>';
+                }
+                
+                return (
+                    '<div class="glass rounded p-3">' +
+                    '<div class="flex items-start gap-3">' +
+                    '<span class="text-gray-400 text-sm">' + (idx + 1) + '.</span>' +
+                    '<div class="flex-1">' +
+                    '<div class="text-white text-sm mb-2">' + escapeHtml(item.item_text) + '</div>' +
+                    inputHtml +
+                    (item.normal_range ? '<div class="text-gray-400 text-xs mt-1">正常範囲: ' + escapeHtml(item.normal_range) + '</div>' : '') +
+                    '</div>' +
+                    '</div>' +
+                    '</div>'
+                );
+            }).join('') +
+            '</div>' +
+            '<div class="border-t border-gray-700 pt-3">' +
+            '<label class="text-gray-400 text-xs">備考</label>' +
+            '<textarea id="exec-notes" rows="2" placeholder="特記事項があれば記入" ' +
+            'class="w-full mt-1 px-3 py-2 bg-gray-700 text-white rounded text-sm"></textarea>' +
+            '</div>' +
+            '<div class="flex gap-2 mt-4">' +
+            '<button onclick="completeChecklistExecution(' + executionId + ', ' + templateId + ')" ' +
+            'class="flex-1 px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition">' +
+            '<i class="fas fa-check mr-2"></i>完了' +
+            '</button>' +
+            '<button onclick="closeDialog()" ' +
+            'class="flex-1 px-4 py-2 bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 rounded-lg transition">' +
+            'キャンセル' +
+            '</button>' +
+            '</div>' +
+            '</div>';
+        
+        showDialog(dialog);
+    } catch (error) {
+        console.error('Error showing checklist execution UI:', error);
+        showToast('点検画面の表示に失敗しました', 'error');
+    }
+};
+
+// Complete checklist execution
+window.completeChecklistExecution = async function(executionId, templateId) {
+    try {
+        // Get items
+        const itemsRes = await axios.get('/api/checklists/items/' + templateId);
+        const items = itemsRes.data;
+        
+        // Save all results
+        for (const item of items) {
+            const element = document.getElementById('result-' + item.id);
+            if (!element) continue;
+            
+            let checkValue = '';
+            let isNormal = 1;
+            
+            if (item.check_type === 'checkbox') {
+                checkValue = element.checked ? 'OK' : 'NG';
+                isNormal = element.checked ? 1 : 0;
+            } else if (item.check_type === 'numeric') {
+                checkValue = element.value;
+                // Check if in normal range
+                if (item.normal_range && element.value) {
+                    const range = item.normal_range.split('-').map(n => parseFloat(n.trim()));
+                    const val = parseFloat(element.value);
+                    isNormal = (val >= range[0] && val <= range[1]) ? 1 : 0;
+                }
+            } else {
+                checkValue = element.value;
+                isNormal = (checkValue === 'OK' || checkValue === 'ok') ? 1 : 0;
+            }
+            
+            await axios.post('/api/checklists/results', {
+                execution_id: executionId,
+                item_id: item.id,
+                check_value: checkValue,
+                is_normal: isNormal,
+                notes: null
+            });
+        }
+        
+        // Get notes
+        const notes = document.getElementById('exec-notes') ? document.getElementById('exec-notes').value : '';
+        
+        // Complete execution
+        await axios.put('/api/checklists/executions/' + executionId, {
+            status: 'completed',
+            notes: notes
+        });
+        
+        showToast('点検を完了しました', 'success');
+        closeDialog();
+        
+        // Reload checklist list
+        if (window.loadChecklistTemplates) {
+            window.loadChecklistTemplates();
+        }
+    } catch (error) {
+        console.error('Error completing checklist execution:', error);
+        showToast('点検の完了に失敗しました', 'error');
+    }
+};
 
 // ============================================
 // Work Order Management Functions
