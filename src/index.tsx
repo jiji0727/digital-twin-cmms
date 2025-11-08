@@ -921,10 +921,17 @@ app.get('/', (c) => {
 
                     <!-- Piping List -->
                     <div>
-                        <h4 class="text-white font-semibold mb-2 flex items-center text-sm">
-                            <i class="fas fa-grip-lines mr-2 text-cyan-400"></i>
-                            配管一覧
-                        </h4>
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-white font-semibold flex items-center text-sm">
+                                <i class="fas fa-grip-lines mr-2 text-cyan-400"></i>
+                                配管一覧
+                            </h4>
+                            <button onclick="showPipingEditDialog()" 
+                                    class="control-btn px-2 py-1 text-white text-xs rounded" 
+                                    title="配管を追加">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
                         <div class="space-y-2 max-h-64 overflow-y-auto" id="piping-list">
                             <!-- Populated by JavaScript -->
                         </div>

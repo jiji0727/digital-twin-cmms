@@ -36,7 +36,11 @@ const state = {
     cameraPitch: 0,  // Vertical rotation (around X axis)
     moveSpeed: 0.1,
     rotateSpeed: 0.003,
-    panSpeed: 0.05
+    panSpeed: 0.05,
+    // Piping placement
+    isPlacingPiping: false,
+    pipingStartPoint: null,
+    pipingEndPoint: null
 };
 
 // Initialize the 3D viewer with LCC SDK
@@ -464,6 +468,12 @@ function onMouseUp(event) {
 function onClick(event) {
     state.raycaster.setFromCamera(state.mouse, state.camera);
     
+    // If in piping placement mode
+    if (state.isPlacingPiping) {
+        placePipingPointAtClick();
+        return;
+    }
+    
     // If in equipment placement mode
     if (state.isPlacingEquipment && state.equipmentToPlace) {
         placeEquipmentAtClick();
@@ -486,6 +496,16 @@ function onClick(event) {
         return;
     }
     
+    // Check if clicking on piping
+    const pipingIntersects = state.raycaster.intersectObjects(state.pipingLines);
+    if (pipingIntersects.length > 0) {
+        const pipingMesh = pipingIntersects[0].object;
+        if (pipingMesh.userData.pipingId) {
+            window.selectPiping(pipingMesh.userData.pipingId);
+        }
+        return;
+    }
+    
     // If edit mode and clicked on model surface
     if (state.editMode && state.modelLoaded) {
         // Raycast against all objects in the scene (excluding markers and helpers)
@@ -493,6 +513,7 @@ function onClick(event) {
             obj.type !== 'GridHelper' && 
             obj.type !== 'AxesHelper' && 
             !state.markers.includes(obj) &&
+            !state.pipingLines.includes(obj) &&
             obj.type !== 'AmbientLight' &&
             obj.type !== 'DirectionalLight' &&
             obj.type !== 'HemisphereLight'
@@ -573,6 +594,71 @@ function showPositionInfo(point) {
         Z: ${point.z.toFixed(2)}
     `;
     console.log(info);
+}
+
+function placePipingPointAtClick() {
+    if (!state.modelLoaded) {
+        showNotification('モデルの読み込みが完了していません。しばらくお待ちください...', 'warning');
+        return;
+    }
+    
+    // Calculate 3D position from camera and mouse position
+    state.raycaster.setFromCamera(state.mouse, state.camera);
+    
+    // Try raycasting against scene objects
+    const intersectableObjects = state.scene.children.filter(obj => 
+        obj.type !== 'GridHelper' && 
+        obj.type !== 'AxesHelper' && 
+        !state.markers.includes(obj) &&
+        !state.pipingLines.includes(obj) &&
+        obj.type !== 'AmbientLight' &&
+        obj.type !== 'DirectionalLight' &&
+        obj.type !== 'HemisphereLight'
+    );
+    
+    const intersects = state.raycaster.intersectObjects(intersectableObjects, true);
+    let point;
+    
+    if (intersects.length > 0) {
+        point = intersects[0].point;
+    } else {
+        // No intersection, place at distance from camera
+        const direction = new THREE.Vector3();
+        state.raycaster.ray.direction.normalize(direction);
+        point = state.camera.position.clone().add(direction.multiplyScalar(10));
+    }
+    
+    console.log('📍 Piping point at:', point);
+    
+    if (!state.pipingStartPoint) {
+        // Set start point
+        state.pipingStartPoint = point.clone();
+        
+        // Create temporary marker for start point
+        const geometry = new THREE.SphereGeometry(0.3, 16, 16);
+        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const marker = new THREE.Mesh(geometry, material);
+        marker.position.copy(point);
+        marker.name = 'tempPipingStartMarker';
+        state.scene.add(marker);
+        
+        showNotification('配管の終点をクリックしてください', 'info');
+    } else {
+        // Set end point
+        state.pipingEndPoint = point.clone();
+        
+        // Remove temporary marker
+        const tempMarker = state.scene.getObjectByName('tempPipingStartMarker');
+        if (tempMarker) {
+            state.scene.remove(tempMarker);
+            if (tempMarker.geometry) tempMarker.geometry.dispose();
+            if (tempMarker.material) tempMarker.material.dispose();
+        }
+        
+        // Show piping dialog with positions set
+        state.isPlacingPiping = false;
+        showPipingEditDialog();
+    }
 }
 
 // CMMS Data Loading
@@ -898,8 +984,12 @@ function renderPipingList(piping) {
                 </div>
                 <div class="flex items-center space-x-1">
                     <button onclick="showPipingEditDialog(${pipe.id}); event.stopPropagation();" 
-                            class="text-blue-400 hover:text-blue-300 p-1">
+                            class="text-blue-400 hover:text-blue-300 p-1" title="編集">
                         <i class="fas fa-edit"></i>
+                    </button>
+                    <button onclick="deletePiping(${pipe.id}); event.stopPropagation();" 
+                            class="text-red-400 hover:text-red-300 p-1" title="削除">
+                        <i class="fas fa-trash"></i>
                     </button>
                 </div>
             </div>
@@ -1764,6 +1854,291 @@ function hideLoadingScreen() {
             loadingScreen.style.display = 'none';
         }, 500);
     }
+}
+
+// ============================================
+// Piping Management Functions
+// ============================================
+
+// Show piping edit dialog
+window.showPipingEditDialog = function(pipingId = null) {
+    const piping = pipingId ? state.piping.find(p => p.id === pipingId) : null;
+    
+    const dialogHTML = `
+        <div id="piping-dialog" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="glass rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-white text-xl font-bold">
+                        <i class="fas fa-grip-lines mr-2 text-cyan-400"></i>
+                        ${piping ? '配管編集' : '新規配管作成'}
+                    </h3>
+                    <button onclick="closePipingDialog()" class="text-gray-400 hover:text-white">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="text-gray-300 text-sm block mb-1">配管名</label>
+                        <input type="text" id="piping-name" value="${piping?.name || ''}" 
+                               class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">配管タイプ</label>
+                        <select id="piping-type" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                            <option value="supply" ${piping?.pipe_type === 'supply' ? 'selected' : ''}>供給管</option>
+                            <option value="return" ${piping?.pipe_type === 'return' ? 'selected' : ''}>還管</option>
+                            <option value="drain" ${piping?.pipe_type === 'drain' ? 'selected' : ''}>排水管</option>
+                            <option value="vent" ${piping?.pipe_type === 'vent' ? 'selected' : ''}>換気管</option>
+                            <option value="other" ${piping?.pipe_type === 'other' ? 'selected' : ''}>その他</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">材質</label>
+                        <select id="piping-material" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                            <option value="steel" ${piping?.material === 'steel' ? 'selected' : ''}>鋼管</option>
+                            <option value="copper" ${piping?.material === 'copper' ? 'selected' : ''}>銅管</option>
+                            <option value="pvc" ${piping?.material === 'pvc' ? 'selected' : ''}>塩ビ管</option>
+                            <option value="stainless" ${piping?.material === 'stainless' ? 'selected' : ''}>ステンレス管</option>
+                            <option value="other" ${piping?.material === 'other' ? 'selected' : ''}>その他</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">管径 (mm)</label>
+                        <input type="number" id="piping-diameter" value="${piping?.diameter || 100}" 
+                               class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">ステータス</label>
+                        <select id="piping-status" class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                            <option value="operational" ${piping?.status === 'operational' ? 'selected' : ''}>正常</option>
+                            <option value="warning" ${piping?.status === 'warning' ? 'selected' : ''}>警告</option>
+                            <option value="critical" ${piping?.status === 'critical' ? 'selected' : ''}>緊急</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">色</label>
+                        <input type="color" id="piping-color" value="${piping?.color || '#2563eb'}" 
+                               class="w-full bg-gray-800 rounded px-2 py-1 h-10 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="text-gray-300 text-sm block mb-1">耐圧 (MPa)</label>
+                        <input type="number" step="0.1" id="piping-pressure" value="${piping?.pressure_rating || 1.0}" 
+                               class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">
+                    </div>
+                    
+                    <div class="col-span-2">
+                        <label class="text-gray-300 text-sm block mb-1">説明</label>
+                        <textarea id="piping-description" rows="2" 
+                                  class="w-full bg-gray-800 text-white rounded px-3 py-2 border border-gray-600 focus:border-blue-500 outline-none">${piping?.description || ''}</textarea>
+                    </div>
+                    
+                    <div class="col-span-2 glass rounded p-4">
+                        <div class="text-gray-300 text-sm mb-3 font-semibold">配管経路</div>
+                        ${piping ? `
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <div class="text-gray-400 mb-1">始点</div>
+                                    <div class="text-white">
+                                        X: ${piping.start_x?.toFixed(2) || 0}<br>
+                                        Y: ${piping.start_y?.toFixed(2) || 0}<br>
+                                        Z: ${piping.start_z?.toFixed(2) || 0}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-gray-400 mb-1">終点</div>
+                                    <div class="text-white">
+                                        X: ${piping.end_x?.toFixed(2) || 0}<br>
+                                        Y: ${piping.end_y?.toFixed(2) || 0}<br>
+                                        Z: ${piping.end_z?.toFixed(2) || 0}
+                                    </div>
+                                </div>
+                            </div>
+                            <button onclick="startPipingRepositioning(${piping.id})" 
+                                    class="mt-3 w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition">
+                                <i class="fas fa-map-marker-alt mr-2"></i>経路を変更
+                            </button>
+                        ` : `
+                            <div class="text-gray-400 text-sm mb-3">3D空間で始点と終点をクリックして指定してください</div>
+                            <button onclick="startPipingPositionSelection()" 
+                                    class="w-full glass rounded px-4 py-2 text-white text-sm hover:bg-white hover:bg-opacity-20 transition">
+                                <i class="fas fa-route mr-2"></i>配管経路を指定
+                            </button>
+                        `}
+                    </div>
+                    
+                    <div class="col-span-2 flex space-x-3">
+                        <button onclick="savePiping(${piping?.id || null})" 
+                                class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded px-4 py-2 font-semibold transition">
+                            <i class="fas fa-save mr-2"></i>保存
+                        </button>
+                        <button onclick="closePipingDialog()" 
+                                class="flex-1 bg-gray-600 hover:bg-gray-700 text-white rounded px-4 py-2 font-semibold transition">
+                            <i class="fas fa-times mr-2"></i>キャンセル
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', dialogHTML);
+}
+
+window.closePipingDialog = function() {
+    const dialog = document.getElementById('piping-dialog');
+    if (dialog) {
+        dialog.remove();
+    }
+    
+    // Cancel any ongoing position selection
+    if (state.isPlacingPiping) {
+        state.isPlacingPiping = false;
+        state.pipingStartPoint = null;
+        state.pipingEndPoint = null;
+        showNotification('配管作成をキャンセルしました', 'info');
+    }
+}
+
+// Start piping position selection
+window.startPipingPositionSelection = function() {
+    state.isPlacingPiping = true;
+    state.pipingStartPoint = null;
+    state.pipingEndPoint = null;
+    showNotification('配管の始点をクリックしてください', 'info');
+    closePipingDialog();
+}
+
+// Save piping
+window.savePiping = async function(pipingId = null) {
+    const name = document.getElementById('piping-name').value;
+    const pipe_type = document.getElementById('piping-type').value;
+    const material = document.getElementById('piping-material').value;
+    const diameter = parseFloat(document.getElementById('piping-diameter').value);
+    const status = document.getElementById('piping-status').value;
+    const color = document.getElementById('piping-color').value;
+    const pressure_rating = parseFloat(document.getElementById('piping-pressure').value);
+    const description = document.getElementById('piping-description').value;
+    
+    if (!name) {
+        alert('配管名を入力してください');
+        return;
+    }
+    
+    const pipingData = {
+        name,
+        pipe_type,
+        material,
+        diameter,
+        status,
+        color,
+        pressure_rating,
+        description
+    };
+    
+    if (pipingId) {
+        // Update existing piping
+        const existingPiping = state.piping.find(p => p.id === pipingId);
+        if (existingPiping) {
+            pipingData.start_x = existingPiping.start_x;
+            pipingData.start_y = existingPiping.start_y;
+            pipingData.start_z = existingPiping.start_z;
+            pipingData.end_x = existingPiping.end_x;
+            pipingData.end_y = existingPiping.end_y;
+            pipingData.end_z = existingPiping.end_z;
+            
+            try {
+                const response = await axios.put(`/api/piping/${pipingId}`, pipingData);
+                if (response.status === 200) {
+                    // Update state
+                    Object.assign(existingPiping, pipingData);
+                    
+                    // Re-render piping
+                    clearPipingVisualization();
+                    createPipingVisualization(state.piping);
+                    renderPipingList(state.piping);
+                    
+                    closePipingDialog();
+                    showNotification('配管を更新しました', 'success');
+                }
+            } catch (error) {
+                console.error('Error updating piping:', error);
+                showNotification('更新に失敗しました', 'error');
+            }
+        }
+    } else {
+        // Create new piping - need positions
+        if (state.pipingStartPoint && state.pipingEndPoint) {
+            pipingData.start_x = state.pipingStartPoint.x;
+            pipingData.start_y = state.pipingStartPoint.y;
+            pipingData.start_z = state.pipingStartPoint.z;
+            pipingData.end_x = state.pipingEndPoint.x;
+            pipingData.end_y = state.pipingEndPoint.y;
+            pipingData.end_z = state.pipingEndPoint.z;
+            
+            try {
+                const response = await axios.post('/api/piping', pipingData);
+                if (response.status === 201) {
+                    const newPiping = response.data;
+                    state.piping.push(newPiping);
+                    
+                    // Create visualization
+                    createPipingVisualization([newPiping]);
+                    renderPipingList(state.piping);
+                    
+                    state.isPlacingPiping = false;
+                    state.pipingStartPoint = null;
+                    state.pipingEndPoint = null;
+                    
+                    showNotification(`${newPiping.name}を作成しました`, 'success');
+                }
+            } catch (error) {
+                console.error('Error creating piping:', error);
+                showNotification('配管の作成に失敗しました', 'error');
+            }
+        } else {
+            alert('配管の始点と終点を指定してください');
+        }
+    }
+}
+
+// Delete piping
+window.deletePiping = async function(pipingId) {
+    if (!confirm('この配管を削除しますか？')) return;
+    
+    try {
+        const response = await axios.delete(`/api/piping/${pipingId}`);
+        if (response.status === 200) {
+            // Remove from state
+            state.piping = state.piping.filter(p => p.id !== pipingId);
+            
+            // Remove visualization
+            clearPipingVisualization();
+            createPipingVisualization(state.piping);
+            renderPipingList(state.piping);
+            
+            showNotification('配管を削除しました', 'success');
+        }
+    } catch (error) {
+        console.error('Error deleting piping:', error);
+        showNotification('削除に失敗しました', 'error');
+    }
+}
+
+// Clear all piping visualizations
+function clearPipingVisualization() {
+    state.pipingLines.forEach(line => {
+        state.scene.remove(line);
+        if (line.geometry) line.geometry.dispose();
+        if (line.material) line.material.dispose();
+    });
+    state.pipingLines = [];
 }
 
 // Initialize viewer on page load
