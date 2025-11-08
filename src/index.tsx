@@ -868,10 +868,10 @@ app.get('/', (c) => {
                     </div>
                 </div>
                 
-                <!-- FPS Controls Info -->
+                <!-- Camera Controls Info -->
                 <div class="text-gray-400 text-xs mt-2 text-center flex items-center justify-center">
                     <i class="fas fa-info-circle mr-2"></i>
-                    <span>クリックでFPS操作 | WASD移動 | マウス視点変更 | Space上昇 | Shift下降 | ESC終了</span>
+                    <span>マウスホイール: 前進/後退 | 左ドラッグ: 視点回転 | 右ドラッグ: パン移動</span>
                 </div>
             </div>
 

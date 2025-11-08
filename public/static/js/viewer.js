@@ -1,6 +1,5 @@
 // Advanced Digital Twin CMMS Viewer with LCC SDK
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { LCCRender } from '/sdk/lcc-0.5.3.js';
 
 console.log('🚀 Digital Twin CMMS Viewer with LCC SDK starting...');
@@ -10,7 +9,6 @@ const state = {
     scene: null,
     camera: null,
     renderer: null,
-    controls: null,
     lccObject: null,
     equipment: [],
     selectedEquipment: null,
@@ -29,16 +27,16 @@ const state = {
     modelLoaded: false,
     sceneLogged: false,
     savedCameraViews: [],  // Array to store saved camera positions
-    // FPS movement
-    moveForward: false,
-    moveBackward: false,
-    moveLeft: false,
-    moveRight: false,
-    moveUp: false,
-    moveDown: false,
-    velocity: new THREE.Vector3(),
-    direction: new THREE.Vector3(),
-    moveSpeed: 50.0
+    // Custom camera controls
+    isLeftDragging: false,
+    isRightDragging: false,
+    lastMouseX: 0,
+    lastMouseY: 0,
+    cameraYaw: 0,    // Horizontal rotation (around Y axis)
+    cameraPitch: 0,  // Vertical rotation (around X axis)
+    moveSpeed: 0.1,
+    rotateSpeed: 0.003,
+    panSpeed: 0.05
 };
 
 // Initialize the 3D viewer with LCC SDK
@@ -78,83 +76,104 @@ async function initViewer() {
     state.renderer.toneMappingExposure = 1.2;
     updateLoadingProgress(20);
 
-    // Setup FPS Controls (PointerLock)
-    state.controls = new PointerLockControls(state.camera, document.body);
-    
-    // Click to enable FPS controls
-    canvas.addEventListener('click', () => {
-        if (!state.editMode && !state.isDragging) {
-            state.controls.lock();
+    // Setup Custom Camera Controls
+    // Initialize camera rotation from current position
+    const lookAtCenter = new THREE.Vector3(0, 0, 0);
+    const direction = new THREE.Vector3().subVectors(lookAtCenter, state.camera.position).normalize();
+    state.cameraYaw = Math.atan2(direction.x, direction.z);
+    state.cameraPitch = Math.asin(direction.y);
+
+    // Mouse wheel for forward/backward movement
+    canvas.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        
+        // Get camera forward direction
+        const forward = new THREE.Vector3(
+            Math.sin(state.cameraYaw),
+            0,
+            Math.cos(state.cameraYaw)
+        ).normalize();
+        
+        // Move camera forward or backward based on wheel delta
+        const moveDistance = event.deltaY * state.moveSpeed;
+        state.camera.position.x += forward.x * moveDistance;
+        state.camera.position.z += forward.z * moveDistance;
+    }, { passive: false });
+
+    // Mouse down - start dragging
+    canvas.addEventListener('mousedown', (event) => {
+        if (event.button === 0) { // Left button - FPS rotation
+            state.isLeftDragging = true;
+            state.lastMouseX = event.clientX;
+            state.lastMouseY = event.clientY;
+            canvas.style.cursor = 'grabbing';
+        } else if (event.button === 2) { // Right button - Pan
+            state.isRightDragging = true;
+            state.lastMouseX = event.clientX;
+            state.lastMouseY = event.clientY;
+            canvas.style.cursor = 'move';
         }
     });
-    
-    state.controls.addEventListener('lock', () => {
-        console.log('🎮 FPS controls enabled');
-    });
-    
-    state.controls.addEventListener('unlock', () => {
-        console.log('🎮 FPS controls disabled');
-    });
-    
-    // Keyboard controls
-    const onKeyDown = (event) => {
-        switch (event.code) {
-            case 'KeyW':
-            case 'ArrowUp':
-                state.moveForward = true;
-                break;
-            case 'KeyS':
-            case 'ArrowDown':
-                state.moveBackward = true;
-                break;
-            case 'KeyA':
-            case 'ArrowLeft':
-                state.moveLeft = true;
-                break;
-            case 'KeyD':
-            case 'ArrowRight':
-                state.moveRight = true;
-                break;
-            case 'Space':
-                state.moveUp = true;
-                break;
-            case 'ShiftLeft':
-            case 'ShiftRight':
-                state.moveDown = true;
-                break;
+
+    // Mouse move - handle rotation and pan
+    canvas.addEventListener('mousemove', (event) => {
+        if (state.isLeftDragging) {
+            // FPS-style camera rotation
+            const deltaX = event.clientX - state.lastMouseX;
+            const deltaY = event.clientY - state.lastMouseY;
+            
+            state.cameraYaw -= deltaX * state.rotateSpeed;
+            state.cameraPitch -= deltaY * state.rotateSpeed;
+            
+            // Clamp pitch to prevent flipping
+            state.cameraPitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, state.cameraPitch));
+            
+            state.lastMouseX = event.clientX;
+            state.lastMouseY = event.clientY;
+            
+            state.isDragging = true;
+        } else if (state.isRightDragging) {
+            // Pan camera
+            const deltaX = event.clientX - state.lastMouseX;
+            const deltaY = event.clientY - state.lastMouseY;
+            
+            // Calculate camera right and up vectors
+            const right = new THREE.Vector3(
+                Math.cos(state.cameraYaw),
+                0,
+                -Math.sin(state.cameraYaw)
+            ).normalize();
+            
+            const up = new THREE.Vector3(0, 1, 0);
+            
+            // Move camera perpendicular to view direction
+            state.camera.position.x -= right.x * deltaX * state.panSpeed;
+            state.camera.position.z -= right.z * deltaX * state.panSpeed;
+            state.camera.position.y += up.y * deltaY * state.panSpeed;
+            
+            state.lastMouseX = event.clientX;
+            state.lastMouseY = event.clientY;
+            
+            state.isDragging = true;
         }
-    };
-    
-    const onKeyUp = (event) => {
-        switch (event.code) {
-            case 'KeyW':
-            case 'ArrowUp':
-                state.moveForward = false;
-                break;
-            case 'KeyS':
-            case 'ArrowDown':
-                state.moveBackward = false;
-                break;
-            case 'KeyA':
-            case 'ArrowLeft':
-                state.moveLeft = false;
-                break;
-            case 'KeyD':
-            case 'ArrowRight':
-                state.moveRight = false;
-                break;
-            case 'Space':
-                state.moveUp = false;
-                break;
-            case 'ShiftLeft':
-            case 'ShiftRight':
-                state.moveDown = false;
-                break;
-        }
-    };
-    
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
+    });
+
+    // Mouse up - stop dragging
+    canvas.addEventListener('mouseup', () => {
+        state.isLeftDragging = false;
+        state.isRightDragging = false;
+        canvas.style.cursor = 'default';
+        
+        // Reset isDragging flag after a short delay to allow click events
+        setTimeout(() => {
+            state.isDragging = false;
+        }, 50);
+    });
+
+    // Prevent context menu on right click
+    canvas.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+    });
     
     updateLoadingProgress(25);
 
@@ -281,31 +300,15 @@ function animate() {
 
     const delta = state.clock.getDelta();
 
-    // FPS movement
-    if (state.controls.isLocked) {
-        state.velocity.x -= state.velocity.x * 10.0 * delta;
-        state.velocity.z -= state.velocity.z * 10.0 * delta;
-        state.velocity.y -= state.velocity.y * 10.0 * delta;
-
-        state.direction.z = Number(state.moveForward) - Number(state.moveBackward);
-        state.direction.x = Number(state.moveRight) - Number(state.moveLeft);
-        state.direction.y = Number(state.moveUp) - Number(state.moveDown);
-        state.direction.normalize();
-
-        if (state.moveForward || state.moveBackward) {
-            state.velocity.z -= state.direction.z * state.moveSpeed * delta;
-        }
-        if (state.moveLeft || state.moveRight) {
-            state.velocity.x -= state.direction.x * state.moveSpeed * delta;
-        }
-        if (state.moveUp || state.moveDown) {
-            state.velocity.y += state.direction.y * state.moveSpeed * delta;
-        }
-
-        state.controls.moveRight(-state.velocity.x * delta);
-        state.controls.moveForward(-state.velocity.z * delta);
-        state.camera.position.y += (state.velocity.y * delta);
-    }
+    // Update camera rotation based on yaw and pitch
+    const lookDirection = new THREE.Vector3(
+        Math.sin(state.cameraYaw) * Math.cos(state.cameraPitch),
+        Math.sin(state.cameraPitch),
+        Math.cos(state.cameraYaw) * Math.cos(state.cameraPitch)
+    );
+    
+    const lookAtPoint = new THREE.Vector3().addVectors(state.camera.position, lookDirection);
+    state.camera.lookAt(lookAtPoint);
 
     // Update LCC rendering
     if (state.lccObject && LCCRender) {
@@ -1012,8 +1015,13 @@ window.togglePipingVisibility = function(checkbox) {
 
 // Control Functions
 window.resetView = function() {
-    state.camera.position.set(15, 10, 15);
-    state.camera.lookAt(0, 0, 0);
+    state.camera.position.set(20, 15, 20);
+    
+    // Reset yaw and pitch to look at center
+    const lookDir = new THREE.Vector3(0, 0, 0).sub(state.camera.position).normalize();
+    state.cameraYaw = Math.atan2(lookDir.x, lookDir.z);
+    state.cameraPitch = Math.asin(lookDir.y);
+    
     showNotification('ホーム視点にリセットしました', 'info');
 }
 
@@ -1072,22 +1080,27 @@ window.selectEquipment = function(id) {
         // Check if there's a saved camera view for this equipment
         const savedView = getSavedViewForEquipment(id);
         
-        let endPos, endRotation;
+        let endPos, endYaw, endPitch;
         if (savedView) {
-            // Use saved camera position and rotation
+            // Use saved camera position and rotation (yaw/pitch)
             endPos = new THREE.Vector3(savedView.position.x, savedView.position.y, savedView.position.z);
-            if (savedView.rotation) {
-                endRotation = new THREE.Euler(savedView.rotation.x, savedView.rotation.y, savedView.rotation.z);
-            }
+            endYaw = savedView.yaw !== undefined ? savedView.yaw : state.cameraYaw;
+            endPitch = savedView.pitch !== undefined ? savedView.pitch : state.cameraPitch;
         } else {
             // Use default offset
             const offset = new THREE.Vector3(8, 5, 8);
             endPos = targetPos.clone().add(offset);
+            
+            // Calculate yaw and pitch to look at marker
+            const lookDir = new THREE.Vector3().subVectors(targetPos, endPos).normalize();
+            endYaw = Math.atan2(lookDir.x, lookDir.z);
+            endPitch = Math.asin(lookDir.y);
         }
         
         // Smooth camera transition
         const startPos = state.camera.position.clone();
-        const startRotation = state.camera.rotation.clone();
+        const startYaw = state.cameraYaw;
+        const startPitch = state.cameraPitch;
         
         let progress = 0;
         const duration = 1000;
@@ -1101,14 +1114,9 @@ window.selectEquipment = function(id) {
             
             state.camera.position.lerpVectors(startPos, endPos, eased);
             
-            // Look at marker or restore saved rotation
-            if (progress === 1) {
-                if (endRotation) {
-                    state.camera.rotation.copy(endRotation);
-                } else {
-                    state.camera.lookAt(targetPos);
-                }
-            }
+            // Lerp yaw and pitch
+            state.cameraYaw = startYaw + (endYaw - startYaw) * eased;
+            state.cameraPitch = startPitch + (endPitch - startPitch) * eased;
             
             if (progress < 1) {
                 requestAnimationFrame(animateCamera);
@@ -1174,7 +1182,7 @@ function showSelectionPanel(equipment) {
 
 // Camera View Management Functions (Equipment-specific)
 window.saveEquipmentCameraView = function(equipmentId) {
-    if (!state.camera || !state.controls) {
+    if (!state.camera) {
         showNotification('カメラが初期化されていません', 'error');
         return;
     }
@@ -1184,7 +1192,7 @@ window.saveEquipmentCameraView = function(equipmentId) {
         return;
     }
     
-    // Save camera position and rotation for this equipment (FPS style)
+    // Save camera position and rotation (yaw/pitch) for this equipment
     const cameraView = {
         equipmentId: equipmentId,
         position: {
@@ -1192,11 +1200,8 @@ window.saveEquipmentCameraView = function(equipmentId) {
             y: state.camera.position.y,
             z: state.camera.position.z
         },
-        rotation: {
-            x: state.camera.rotation.x,
-            y: state.camera.rotation.y,
-            z: state.camera.rotation.z
-        },
+        yaw: state.cameraYaw,
+        pitch: state.cameraPitch,
         timestamp: new Date().toISOString()
     };
     
@@ -1247,6 +1252,26 @@ function loadSavedViews() {
         const savedData = localStorage.getItem('cmms_equipment_views');
         if (savedData) {
             state.savedCameraViews = JSON.parse(savedData);
+            
+            // Convert old rotation format to yaw/pitch if needed
+            state.savedCameraViews.forEach(view => {
+                if (view.rotation && (view.yaw === undefined || view.pitch === undefined)) {
+                    // Convert Euler rotation to yaw/pitch
+                    const euler = new THREE.Euler(view.rotation.x, view.rotation.y, view.rotation.z);
+                    const quaternion = new THREE.Quaternion().setFromEuler(euler);
+                    const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+                    
+                    view.yaw = Math.atan2(direction.x, direction.z);
+                    view.pitch = Math.asin(direction.y);
+                    
+                    // Remove old rotation data
+                    delete view.rotation;
+                }
+            });
+            
+            // Save converted data back to localStorage
+            localStorage.setItem('cmms_equipment_views', JSON.stringify(state.savedCameraViews));
+            
             console.log(`📷 Loaded ${state.savedCameraViews.length} equipment camera views`);
             updateEquipmentListIcons();
         }
