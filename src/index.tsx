@@ -567,6 +567,14 @@ app.get('/', (c) => {
                 to { transform: rotate(360deg); }
             }
         </style>
+        <script>
+            // Register Service Worker for data.bin reconstruction
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('[App] Service Worker registered:', reg.scope))
+                    .catch(err => console.error('[App] Service Worker registration failed:', err));
+            }
+        </script>
     </head>
     <body>
         <!-- Loading Screen -->
@@ -769,8 +777,8 @@ app.get('/', (c) => {
         <script type="importmap">
         {
             "imports": {
-                "three": "/static/engine/three/three.module.js",
-                "three/addons/": "/static/engine/three/jsm/"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
             }
         }
         </script>
